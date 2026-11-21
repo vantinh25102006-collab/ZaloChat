@@ -1,0 +1,21 @@
+{
+  "users": {
+    "Duong": {
+      "phone": "0332018432",
+      "salt": "bQ34S0cHIoBXDUJ7kvdWgg\u003d\u003d",
+      "hash": "ndxWyryu9Aclhzag1DEG0NSevIxbdnmc/UxxTgjcEek\u003d"
+    },
+    "tinh": {
+      "salt": "2CPdnGbXTBuB+mzBgQp/4g\u003d\u003d",
+      "hash": "sBVUjMfODTGTdmG/Uh3I+CvmfLgOyCK+OhyDzJkwJAs\u003d"
+    },
+    "anh": {
+      "salt": "XwOa+9f1D3g6Mv/wtUOKGA\u003d\u003d",
+      "hash": "DPArChQDmiDbMswoOwEoblZmdPooVhNCmMdw0kWsbec\u003d"
+    },
+    "binh": {
+      "salt": "OmM5wdeJcZrraLRks4VwGg\u003d\u003d",
+      "hash": "pyN0XlQKeqe4E0rgwSs+Q00aSv0JdQloKJVYHf7g75Q\u003d"
+    }
+  }
+}

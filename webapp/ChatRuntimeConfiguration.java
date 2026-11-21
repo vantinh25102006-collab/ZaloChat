@@ -1,0 +1,14 @@
+package webapp;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import server.UserStore;
+import webapp.runtime.ChatMessageBus;
+import webapp.runtime.ChatPresenceRegistry;
+
+@Configuration
+public class ChatRuntimeConfiguration {
+    @Bean public UserStore userStore() { return new UserStore(); }
+    @Bean public ChatMessageBus chatMessageBus() { return new ChatMessageBus(); }
+    @Bean public ChatPresenceRegistry chatPresenceRegistry() { return new ChatPresenceRegistry(); }
+}

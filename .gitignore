@@ -1,0 +1,8 @@
+target/
+server/certificates/*.p12
+server/certificates/*.jks
+server/certificates/*.key
+server/certificates/*.pem
+server/certificates/*.crt
+client/certificates/*.crt
+*.log

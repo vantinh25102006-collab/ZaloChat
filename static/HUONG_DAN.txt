@@ -1,0 +1,8 @@
+ZChat - giao dien moi theo phong cach Zalo PC
+
+1. Sao luu index.html va app.js hien tai.
+2. Giai nen goi nay.
+3. Thay index.html va app.js trong thu muc frontend bang hai file trong goi.
+4. Khoi dong lai web server va nhan Ctrl+F5.
+
+Luu y: app.js duoc giu nguyen de bao toan cac nghiep vu hien co. index.html duoc lam moi phan trinh bay va bo cuc thanh cong cu soan tin.
