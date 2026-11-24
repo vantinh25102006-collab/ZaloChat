@@ -54,6 +54,8 @@ public enum MessageType {
     @SerializedName("get_posts")       GET_POSTS,
     @SerializedName("posts_result")     POSTS_RESULT,
     @SerializedName("group_add_member") GROUP_ADD_MEMBER,
+    @SerializedName("group_remove_member") GROUP_REMOVE_MEMBER,
+    @SerializedName("group_update_info") GROUP_UPDATE_INFO,
     @SerializedName("group_transfer_owner") GROUP_TRANSFER_OWNER,
     @SerializedName("group_leave")      GROUP_LEAVE,
     @SerializedName("group_delete")     GROUP_DELETE,

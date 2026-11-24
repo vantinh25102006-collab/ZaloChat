@@ -62,7 +62,8 @@ if (-not (Test-Path "$RootDir\server\certificates\server.p12")) {
     exit 1
 }
 
-Write-Host "`nKhởi động Web + TCP/TLS Server (Web :$Port, TCP :5000)" -ForegroundColor Cyan
+Write-Host "`nKhởi động Web (HTTPS/WSS :$Port) + TCP/TLS Server (:5000)" -ForegroundColor Cyan
+Write-Host "Truy cập trình duyệt tại: https://localhost:$Port" -ForegroundColor Green
 Write-Host "Nhấn Ctrl+C để dừng`n" -ForegroundColor Gray
 
 # Chạy jar

@@ -141,6 +141,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             case CREATE_POST         -> handleCreatePost(session, json);
             case GET_POSTS           -> handleGetPosts(session, json);
             case GROUP_ADD_MEMBER    -> handleGroupAddMember(session, json);
+            case GROUP_REMOVE_MEMBER -> handleGroupRemoveMember(session, json);
+            case GROUP_UPDATE_INFO   -> handleGroupUpdateInfo(session, json);
             case GROUP_TRANSFER_OWNER -> handleGroupTransferOwner(session, json);
             case GROUP_LEAVE         -> handleGroupLeave(session, json);
             case GROUP_DELETE        -> handleGroupDelete(session, json);
@@ -585,16 +587,28 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         String sender = requireAuth(session);
         if (sender == null) return;
         String requestId = getString(json, "requestId");
-        if (requestId == null) { sendError(session, "Thiếu requestId."); return; }
+        String to = getString(json, "to");
+        if ((requestId == null || requestId.isBlank()) && to != null && !to.isBlank()) {
+            requestId = db.getPendingRequestId(sender, to);
+        }
+        if (requestId == null || requestId.isBlank()) { sendError(session, "Thiếu requestId."); return; }
 
         db.cancelFriendRequest(requestId, sender);
 
         ChatMessage ack = new ChatMessage();
         ack.setType(MessageType.FRIEND_CANCEL);
         ack.setRequestId(requestId);
+        ack.setTo(to);
         ack.setStatus("cancelled");
         ack.setTimestamp(java.time.Instant.now().toString());
         send(session, ack);
+
+        if (to != null && !to.isBlank()) {
+            WebSocketSession receiverSession = sessions.get(to);
+            if (receiverSession != null && receiverSession.isOpen()) {
+                sendPendingRequestsToSession(receiverSession, to);
+            }
+        }
     }
 
     private void handleUnfriend(WebSocketSession session, JsonObject json) throws IOException {
@@ -661,6 +675,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         response.setStatus(relationship);
         if (requestId != null) response.setRequestId(requestId);
         response.setContent(online ? "online" : "offline");
+        response.setLastSeen(presence.getLastSeen(targetUsername));
+        Map<String, Object> prof = db.getProfile(targetUsername);
+        if (prof.get("avatarPath") instanceof String av) response.setAvatarPath(av);
         response.setTimestamp(java.time.Instant.now().toString());
         send(session, response);
     }
@@ -686,7 +703,16 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         String id=getString(json,"messageId"),conv=getString(json,"conversationId");
         if(id==null||conv==null){sendError(session,"Thiếu messageId/conversationId.");return;}
         if(!canAccessConversation(me,conv)||!db.messageBelongsToConversation(id,conv)){sendError(session,"Bạn không có quyền thu hồi tin nhắn này.");return;}
-        if(!db.revokeMessage(id,me)){sendError(session,"Chỉ có thể thu hồi tin nhắn do chính bạn gửi.");return;}
+        boolean isGroupOwner = false;
+        if (conv.startsWith("group:")) {
+            Group g = groups.get(conv.substring(6));
+            isGroupOwner = (g != null && me.equals(g.getCreatedBy()));
+        }
+        DatabaseManager.RevokeResult res = db.revokeMessage(id, me, isGroupOwner);
+        if(!res.revoked()){sendError(session,"Chỉ người gửi hoặc trưởng nhóm mới có thể thu hồi tin nhắn này.");return;}
+        if(res.orphanFileId() != null) {
+            FileController.deleteStoredFile(res.orphanFileId());
+        }
         Map<String,Object> payload=new LinkedHashMap<>();payload.put("type","message_revoked");
         payload.put("messageId",id);payload.put("conversationId",conv);payload.put("username",me);
         broadcastConversation(conv,payload);
@@ -725,7 +751,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     }
     private void handleProfileUpdate(WebSocketSession session,JsonObject json)throws IOException{
         String me=requireAuth(session);if(me==null)return;
-        db.updateProfile(me,getString(json,"avatarPath"),getString(json,"coverPath"),getString(json,"bio"));
+        List<String> oldFiles = db.updateProfile(me,getString(json,"avatarPath"),getString(json,"coverPath"),getString(json,"bio"));
+        for (String oldFile : oldFiles) {
+            FileController.deleteStoredFile(oldFile);
+        }
         Map<String,Object> p=db.getProfile(me);p.put("type","profile_updated");sendPayload(session,p);
     }
     private void handleCreatePost(WebSocketSession session,JsonObject json)throws IOException{
@@ -741,14 +770,110 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         payload.put("profile",db.getProfile(target));payload.put("posts",db.getPosts(target));sendPayload(session,payload);
     }
 
-    private void handleGroupAddMember(WebSocketSession session,JsonObject json)throws IOException{
-        String me=requireAuth(session);if(me==null)return;String gid=getString(json,"groupId"),user=getString(json,"username");
-        if(gid==null){sendError(session,"Thiếu groupId.");return;}
-        Group g=groups.get(gid);if(g==null||!g.getCreatedBy().equals(me)){sendError(session,"Chỉ nhóm trưởng mới được thêm thành viên.");return;}
-        if(user==null||userStore.search(user).stream().noneMatch(u->u.username().equals(user))){sendError(session,"Không tìm thấy người dùng.");return;}
-        if(g.hasMember(user)){sendError(session,"Người này đã ở trong nhóm.");return;}
-        g.addMember(user);db.addGroupMember(gid,user);broadcastGroupUpdate(g);
+    private void sendGroupSystemNotification(Group g, String content) throws IOException {
+        if (g == null || content == null || content.isBlank()) return;
+        String convId = "group:" + g.getId();
+        String msgId = UUID.randomUUID().toString();
+        String now = java.time.Instant.now().toString();
+        db.saveMessage(msgId, convId, "SYSTEM", null, "system", content, null, null, null, null);
+        ChatMessage sysMsg = ChatMessage.groupMessage("SYSTEM", g.getId(), g.getName(), content);
+        sysMsg.setType(MessageType.GROUP_MESSAGE);
+        sysMsg.setMessageId(msgId);
+        sysMsg.setTimestamp(now);
+        sysMsg.setStatus("system");
+        addHistory(convId, sysMsg);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "group_message");
+        payload.put("messageType", "system");
+        payload.put("groupId", g.getId());
+        payload.put("groupName", g.getName());
+        payload.put("conversationId", convId);
+        payload.put("messageId", msgId);
+        payload.put("username", "SYSTEM");
+        payload.put("content", content);
+        payload.put("timestamp", now);
+        for (String member : g.getMembers()) {
+            WebSocketSession ms = sessions.get(member);
+            if (ms != null && ms.isOpen()) sendPayload(ms, payload);
+        }
     }
+
+    private void handleGroupAddMember(WebSocketSession session,JsonObject json)throws IOException{
+        String me=requireAuth(session);if(me==null)return;
+        String gid=getString(json,"groupId");
+        if(gid==null){sendError(session,"Thiếu groupId.");return;}
+        Group g=groups.get(gid);
+        if(g==null||!g.hasMember(me)){sendError(session,"Bạn không phải thành viên của nhóm này.");return;}
+
+        List<String> toAdd = new ArrayList<>();
+        if (json.has("usernames") && json.get("usernames").isJsonArray()) {
+            json.getAsJsonArray("usernames").forEach(e -> {
+                if (!e.isJsonNull()) toAdd.add(e.getAsString().strip());
+            });
+        } else {
+            String single = getString(json, "username");
+            if (single != null && !single.isBlank()) toAdd.add(single.strip());
+        }
+        if (toAdd.isEmpty()) { sendError(session, "Hãy chọn ít nhất một thành viên để thêm."); return; }
+
+        List<String> added = new ArrayList<>();
+        for (String user : toAdd) {
+            if (user.isBlank() || g.hasMember(user)) continue;
+            if (userStore.search(user).stream().noneMatch(u -> u.username().equals(user))) continue;
+            g.addMember(user);
+            db.addGroupMember(gid, user);
+            added.add(user);
+        }
+        if (added.isEmpty()) { sendError(session, "Không có thành viên hợp lệ nào được thêm."); return; }
+        broadcastGroupUpdate(g);
+        sendGroupSystemNotification(g, me + " đã thêm " + String.join(", ", added) + " vào nhóm");
+    }
+
+    private void handleGroupRemoveMember(WebSocketSession session, JsonObject json) throws IOException {
+        String me = requireAuth(session); if (me == null) return;
+        String gid = getString(json, "groupId"), target = getString(json, "username");
+        if (gid == null || target == null) { sendError(session, "Thiếu groupId hoặc username."); return; }
+        Group g = groups.get(gid);
+        if (g == null || !g.getCreatedBy().equals(me)) { sendError(session, "Chỉ trưởng nhóm mới có quyền xóa thành viên."); return; }
+        if (target.equals(me) || !g.hasMember(target)) { sendError(session, "Thành viên không hợp lệ."); return; }
+        g.removeMember(target);
+        db.removeGroupMember(gid, target);
+        WebSocketSession targetSession = sessions.get(target);
+        if (targetSession != null && targetSession.isOpen()) {
+            sendPayload(targetSession, Map.of("type", "group_left", "groupId", gid, "kickedBy", me));
+        }
+        broadcastGroupUpdate(g);
+        sendGroupSystemNotification(g, me + " đã xóa " + target + " khỏi nhóm");
+    }
+
+    private void handleGroupUpdateInfo(WebSocketSession session, JsonObject json) throws IOException {
+        String me = requireAuth(session); if (me == null) return;
+        String gid = getString(json, "groupId");
+        if (gid == null) { sendError(session, "Thiếu groupId."); return; }
+        Group g = groups.get(gid);
+        if (g == null || !g.hasMember(me)) { sendError(session, "Bạn không thuộc nhóm này."); return; }
+
+        String newName = getString(json, "name");
+        String newAvatar = getString(json, "avatarPath");
+        boolean nameChanged = newName != null && !newName.isBlank() && !newName.strip().equals(g.getName());
+        boolean avatarChanged = newAvatar != null && !newAvatar.equals(g.getAvatarPath());
+
+        String oldAvatar = db.updateGroupInfo(gid, nameChanged ? newName.strip() : null, avatarChanged ? newAvatar : null);
+        if (oldAvatar != null) {
+            FileController.deleteStoredFile(oldAvatar);
+        }
+        if (nameChanged) g.setName(newName.strip());
+        if (avatarChanged) g.setAvatarPath("__CLEAR__".equals(newAvatar) ? null : newAvatar);
+
+        broadcastGroupUpdate(g);
+        if (nameChanged) {
+            sendGroupSystemNotification(g, me + " đã đổi tên nhóm thành \"" + g.getName() + "\"");
+        }
+        if (avatarChanged) {
+            sendGroupSystemNotification(g, me + " đã cập nhật ảnh đại diện nhóm");
+        }
+    }
+
     private void handleGroupTransferOwner(WebSocketSession session,JsonObject json)throws IOException{
         String me=requireAuth(session);if(me==null)return;String gid=getString(json,"groupId"),next=getString(json,"username");
         if(gid==null){sendError(session,"Thiếu groupId.");return;}
@@ -756,6 +881,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if(next==null||!g.hasMember(next)||next.equals(me)){sendError(session,"Thành viên nhận quyền không hợp lệ.");return;}
         if(!db.transferGroupOwner(gid,me,next)){sendError(session,"Không thể chuyển quyền nhóm.");return;}
         g.setCreatedBy(next);broadcastGroupUpdate(g);
+        sendGroupSystemNotification(g, me + " đã nhượng quyền trưởng nhóm cho " + next);
     }
     private void handleGroupLeave(WebSocketSession session,JsonObject json)throws IOException{
         String me=requireAuth(session);if(me==null)return;String gid=getString(json,"groupId");
@@ -764,6 +890,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if(g.getCreatedBy().equals(me)){sendError(session,"Nhóm trưởng phải chuyển quyền quản trị cho thành viên khác trước khi rời nhóm.");return;}
         g.removeMember(me);db.removeGroupMember(gid,me);broadcastGroupUpdate(g);
         sendPayload(session,Map.of("type","group_left","groupId",gid));
+        sendGroupSystemNotification(g, me + " đã rời nhóm");
     }
     private void handleGroupDelete(WebSocketSession session,JsonObject json)throws IOException{
         String me=requireAuth(session);if(me==null)return;String gid=getString(json,"groupId");
@@ -795,11 +922,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private void sendFriendListToSession(WebSocketSession session, String username) throws IOException {
         List<Map<String, String>> friends = db.getFriends(username);
-        // Add online status
+        // Add online status and lastSeen
         for (Map<String, String> f : friends) {
             String friend = f.get("username");
             ((java.util.LinkedHashMap<String,String>)f).put("online",
                 presence.onlineUsers().contains(friend) ? "true" : "false");
+            String seen = presence.getLastSeen(friend);
+            if (seen != null) ((java.util.LinkedHashMap<String,String>)f).put("lastSeen", seen);
         }
         ChatMessage msg = new ChatMessage();
         msg.setType(MessageType.FRIEND_LIST);
@@ -876,6 +1005,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         ChatMessage msg = new ChatMessage();
         msg.setType(MessageType.USER_LIST);
         msg.setUsers(new ArrayList<>(presence.onlineUsers()));
+        msg.setLastSeenMap(presence.getLastSeenSnapshot());
         msg.setTimestamp(java.time.Instant.now().toString());
         broadcast(msg);
     }
@@ -884,6 +1014,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         ChatMessage msg = new ChatMessage();
         msg.setType(MessageType.USER_LIST);
         msg.setUsers(new ArrayList<>(presence.onlineUsers()));
+        msg.setLastSeenMap(presence.getLastSeenSnapshot());
         msg.setTimestamp(java.time.Instant.now().toString());
         send(session, msg);
     }
@@ -893,11 +1024,14 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         List<Map<String, Object>> dbGroups = db.getGroupsForUser(username);
         for (Map<String, Object> g : dbGroups) {
             String gid = (String) g.get("id");
+            String av = (String) g.get("avatarPath");
             if (!groups.containsKey(gid)) {
                 @SuppressWarnings("unchecked")
                 List<String> members = (List<String>) g.get("members");
-                Group group = new Group(gid, (String)g.get("name"), (String)g.get("createdBy"), members);
+                Group group = new Group(gid, (String)g.get("name"), (String)g.get("createdBy"), members, av);
                 groups.put(gid, group);
+            } else if (av != null) {
+                groups.get(gid).setAvatarPath(av);
             }
         }
 

@@ -43,6 +43,9 @@ public class ChatMessage {
     private List<java.util.Map<String, String>> friendList; // danh sách bạn bè
     private List<java.util.Map<String, String>> pendingRequests; // lời mời chờ
     private String requestId;     // ID của friend request
+    private String lastSeen;      // thời gian truy cập gần nhất (ISO-8601)
+    private java.util.Map<String, String> lastSeenMap; // username -> lastSeen ISO-8601
+    private String avatarPath;    // đường dẫn avatar (user hoặc group)
 
     public ChatMessage() { }
 
@@ -200,4 +203,10 @@ public class ChatMessage {
     public void setPendingRequests(List<java.util.Map<String, String>> pendingRequests) { this.pendingRequests = pendingRequests; }
     public String getRequestId() { return requestId; }
     public void setRequestId(String requestId) { this.requestId = requestId; }
+    public String getLastSeen() { return lastSeen; }
+    public void setLastSeen(String lastSeen) { this.lastSeen = lastSeen; }
+    public java.util.Map<String, String> getLastSeenMap() { return lastSeenMap; }
+    public void setLastSeenMap(java.util.Map<String, String> lastSeenMap) { this.lastSeenMap = lastSeenMap; }
+    public String getAvatarPath() { return avatarPath; }
+    public void setAvatarPath(String avatarPath) { this.avatarPath = avatarPath; }
 }

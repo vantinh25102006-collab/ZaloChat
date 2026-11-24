@@ -10,13 +10,19 @@ public class Group {
     private final String id;
     private String name;
     private String createdBy;
+    private String avatarPath;
     private final List<String> members = new CopyOnWriteArrayList<>();
     private final Instant createdAt = Instant.now();
 
     public Group(String id, String name, String createdBy, List<String> initialMembers) {
+        this(id, name, createdBy, initialMembers, null);
+    }
+
+    public Group(String id, String name, String createdBy, List<String> initialMembers, String avatarPath) {
         this.id = id;
         this.name = name;
         this.createdBy = createdBy;
+        this.avatarPath = avatarPath;
         if (initialMembers != null) this.members.addAll(initialMembers);
         if (!this.members.contains(createdBy)) this.members.add(createdBy);
     }
@@ -26,6 +32,8 @@ public class Group {
     public void setName(String name) { this.name = name; }
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String username) { this.createdBy = username; }
+    public String getAvatarPath() { return avatarPath; }
+    public void setAvatarPath(String avatarPath) { this.avatarPath = avatarPath; }
     public List<String> getMembers() { return new ArrayList<>(members); }
     public boolean hasMember(String username) { return members.contains(username); }
     public void addMember(String username) { if (!members.contains(username)) members.add(username); }
@@ -34,13 +42,14 @@ public class Group {
 
     /** Trả về object đơn giản để serialize thành JSON cho client. */
     public java.util.Map<String, Object> toMap() {
-        return java.util.Map.of(
-            "id", id,
-            "name", name,
-            "createdBy", createdBy,
-            "members", members,
-            "createdAt", createdAt.toString()
-        );
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("id", id);
+        m.put("name", name);
+        m.put("createdBy", createdBy);
+        m.put("members", members);
+        m.put("avatarPath", avatarPath);
+        m.put("createdAt", createdAt.toString());
+        return m;
     }
 }
 

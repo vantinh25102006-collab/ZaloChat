@@ -51,7 +51,34 @@ const state = {
   // Hồ sơ người dùng dùng để hiển thị avatar thật trong tin nhắn.
   userProfiles: new Map(),
   profileRequests: new Set(),
+  lastSeenMap: new Map(),
+  pendingSentByTarget: new Map(),
   replyTo: null,
+};
+
+// ─── VECTOR SVG ICONS (Chuẩn Zalo PC / Lucide, thay thế toàn bộ emoji thô) ────
+const UI_ICONS = {
+  user: '<svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  users: '<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  userPlus: '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>',
+  userMinus: '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/></svg>',
+  ban: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>',
+  unlock: '<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>',
+  crown: '<svg viewBox="0 0 24 24"><path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"/></svg>',
+  logOut: '<svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
+  bell: '<svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  bellOff: '<svg viewBox="0 0 24 24"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  edit: '<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  camera: '<svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+  chat: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  download: '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  folderSave: '<svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 11 12 17"/><polyline points="9 14 12 17 15 14"/></svg>',
+  music: '<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+  info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  checkCircle: '<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  xCircle: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
 };
 
 // ─── DOM ──────────────────────────────────────────────────────────────────────
@@ -256,6 +283,8 @@ function onLoginResult(msg) {
       state.avatarRefreshTimer = setInterval(() => {
         if (!state.username) return;
         for (const c of state.conversations.values()) if (c.type === 'dm') requestUserProfile(c.name, true);
+        updateChatHeaderStatus();
+        if (state.activeTab === 'contacts') renderConversationList();
       }, 30000);
     }
   } else {
@@ -340,12 +369,15 @@ function onPrivateMessage(msg) {
 function onGroupMessage(msg) {
   const convId = msg.conversationId || `group:${msg.groupId}`;
   ensureConversation(convId, 'group', msg.groupName || msg.groupId, msg.members || []);
+  if (msg.messageType === 'system' || msg.username === 'SYSTEM') {
+    msg.type = 'system';
+  }
   pushMessage(convId, msg);
 }
 
 function onGroupCreated(msg) {
   const convId = `group:${msg.groupId}`;
-  state.groups.set(msg.groupId, { id: msg.groupId, name: msg.groupName, members: msg.members, createdBy: msg.username });
+  state.groups.set(msg.groupId, { id: msg.groupId, name: msg.groupName, members: msg.members, createdBy: msg.username, avatarPath: msg.avatarPath || null });
   ensureConversation(convId, 'group', msg.groupName, msg.members);
   showToast(`Nhóm "${msg.groupName}" đã được tạo!`, 'success');
   renderConversationList();
@@ -370,6 +402,7 @@ function onConversationList(msg) {
     const conv=state.conversations.get(id);
     if(conv){conv.lastMsg=item.lastMessage||'';conv.lastTimestamp=item.lastTimestamp||'';conv.lastTime=formatTime(item.lastTimestamp);conv.unread=Number(item.unread||0);if(item.muted)state.mutedConversations.add(id);}
   }
+  updateUnreadBadge();
   renderConversationList();
 }
 function onGroupList(msg) {
@@ -377,28 +410,70 @@ function onGroupList(msg) {
   for (const g of msg.groups) {
     state.groups.set(g.id, g);
     if (!g.conversationDeleted) ensureConversation(`group:${g.id}`, 'group', g.name, g.members);
+    const conv = state.conversations.get(`group:${g.id}`);
+    if (conv) conv.name = g.name;
   }
   renderConversationList();
 }
 
 function onUserList(msg) {
   state.onlineUsers = (msg.users || []).filter(u => u !== state.username);
-  renderConversationList();
-  renderMemberList();
+  if (msg.lastSeenMap && typeof msg.lastSeenMap === 'object') {
+    for (const [u, ts] of Object.entries(msg.lastSeenMap)) {
+      if (u && ts) state.lastSeenMap.set(u, ts);
+    }
+  }
   // Update friend online status
   state.friends.forEach(f => {
+    const wasOnline = f.online;
     f.online = state.onlineUsers.includes(f.username);
+    if (wasOnline && !f.online && !state.lastSeenMap.has(f.username)) {
+      state.lastSeenMap.set(f.username, new Date().toISOString());
+    }
   });
-  // Update chat header
+  renderConversationList();
+  renderMemberList();
+  updateChatHeaderStatus();
+}
+
+function updateChatHeaderStatus() {
   const current = state.conversations.get(state.currentConvId);
-  if (current?.type === 'dm') {
+  if (!current) return;
+  if (current.type === 'dm') {
     const online = state.onlineUsers.includes(current.name);
-    dom.chatHeaderStatus.textContent = online ? '● Online' : '○ Offline';
-    dom.chatHeaderStatus.style.color = online ? '#2ecc71' : '#aaa';
-  } else if (current?.type === 'group') {
+    dom.chatHeaderStatus.textContent = formatPresenceStatus(current.name, online);
+    dom.chatHeaderStatus.style.color = online ? '#2ecc71' : '#8893a4';
+  } else if (current.type === 'group') {
     const g = state.groups.get(state.currentConvId.replace('group:',''));
     dom.chatHeaderStatus.textContent = `${g?.members?.length || 0} thành viên`;
+    dom.chatHeaderStatus.style.color = '#0068ff';
   }
+}
+
+function formatPresenceStatus(username, isOnline = state.onlineUsers.includes(username)) {
+  if (isOnline) return '● Đang hoạt động';
+  const iso = state.lastSeenMap.get(username) || state.userProfiles.get(username)?.lastSeen;
+  if (!iso) return '○ Ngoại tuyến';
+  const seenDate = new Date(iso);
+  if (isNaN(seenDate.getTime())) return '○ Ngoại tuyến';
+  const now = new Date();
+  const diffSec = Math.max(0, Math.floor((now.getTime() - seenDate.getTime()) / 1000));
+  if (diffSec < 60) return '○ Truy cập vừa xong';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `○ Truy cập ${diffMin} phút trước`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (seenDate.toDateString() === now.toDateString()) {
+    return `○ Truy cập ${diffHours} giờ trước`;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (seenDate.toDateString() === yesterday.toDateString()) {
+    return '○ Truy cập hôm qua';
+  }
+  const dd = String(seenDate.getDate()).padStart(2, '0');
+  const mm = String(seenDate.getMonth() + 1).padStart(2, '0');
+  const yyyy = seenDate.getFullYear();
+  return `○ Truy cập vào ngày ${dd}/${mm}/${yyyy}`;
 }
 
 function onFileShare(msg) {
@@ -452,12 +527,17 @@ function onTyping(msg) {
 
 // ─── Friend system handlers ───────────────────────────────────────────────────
 function onFriendList(msg) {
-  state.friends = (msg.friendList || []).map(f => ({
-    ...f,
-    online: state.onlineUsers.includes(f.username)
-  }));
+  state.friends = (msg.friendList || []).map(f => {
+    if (f.lastSeen) state.lastSeenMap.set(f.username, f.lastSeen);
+    return {
+      ...f,
+      online: state.onlineUsers.includes(f.username)
+    };
+  });
   state.friends.forEach(f => { if (f.conversationDeleted !== 'true') ensureConversation(dmConvId(state.username,f.username),'dm',f.username,[]); });
   if (state.activeTab === 'contacts' || state.activeTab === 'messages') renderConversationList();
+  const current = state.conversations.get(state.currentConvId);
+  if (current?.type === 'dm') updateStrangerBanner(current.name);
 }
 
 function onFriendRequestsList(msg) {
@@ -467,66 +547,125 @@ function onFriendRequestsList(msg) {
   if (state.activeTab === 'requests') renderConversationList();
 }
 
+function refreshRelationshipUI(targetUsername) {
+  if (!targetUsername) return;
+  if (state.viewedProfile?.username === targetUsername) {
+    renderProfileCard(state.viewedProfile);
+  }
+  if (state.profileTarget === targetUsername) {
+    const cachedPosts = state.lastPostsPayload?.username === targetUsername ? state.lastPostsPayload : { username: targetUsername, profile: state.userProfiles.get(targetUsername) || { username: targetUsername }, posts: [] };
+    renderProfilePage(cachedPosts);
+  }
+  const current = state.conversations.get(state.currentConvId);
+  if (current?.type === 'dm' && current.name === targetUsername) {
+    updateStrangerBanner(targetUsername);
+  }
+}
+
 function onFriendRequest(msg) {
   if (msg.status === 'received') {
     // We received a request
-    state.pendingRequests.push({
-      requestId: msg.requestId,
-      sender: msg.username,
-      createdAt: msg.timestamp,
-    });
+    if (!state.pendingRequests.some(r => r.requestId === msg.requestId)) {
+      state.pendingRequests.push({
+        requestId: msg.requestId,
+        sender: msg.username,
+        createdAt: msg.timestamp,
+      });
+    }
     updateFriendReqBadge();
     renderFriendRequestModal();
     showToast(`${msg.username} đã gửi lời mời kết bạn!`, 'info');
+    if (state.viewedProfile?.username === msg.username) {
+      state.viewedProfile.relationship = 'pending_received';
+      state.viewedProfile.requestId = msg.requestId;
+    }
+    refreshRelationshipUI(msg.username);
     if (state.activeTab === 'requests') renderConversationList();
+  } else if (msg.status === 'sent') {
+    // Ack for sender with real requestId -> cho phép bấm Hủy lời mời ngay lập tức
+    if (msg.to && msg.requestId) {
+      state.pendingSentByTarget.set(msg.to, msg.requestId);
+      if (state.viewedProfile?.username === msg.to) {
+        state.viewedProfile.relationship = 'pending_sent';
+        state.viewedProfile.requestId = msg.requestId;
+      }
+      refreshRelationshipUI(msg.to);
+    }
   }
-  // If 'sent': ack for sender, do nothing extra
 }
 
 function onFriendAccept(msg) {
-  // Both sender and receiver get this
-  const friendUsername = msg.username; // the one who accepted (or the other person)
-  // Refresh friend list
+  const friendUsername = msg.username;
+  state.pendingSentByTarget.delete(friendUsername);
+  state.pendingRequests = state.pendingRequests.filter(r => r.sender !== friendUsername);
+  updateFriendReqBadge();
   wsSend({ type: 'friend_list' });
   showToast(`Bạn và ${friendUsername} đã trở thành bạn bè!`, 'success');
-  // Create DM conversation
   const convId = dmConvId(state.username, friendUsername);
   ensureConversation(convId, 'dm', friendUsername, []);
   renderConversationList();
-  // Update profile view if open
   if (state.viewedProfile?.username === friendUsername) {
     state.viewedProfile.relationship = 'friend';
-    renderProfileCard(state.viewedProfile);
   }
+  refreshRelationshipUI(friendUsername);
 }
 
 function onFriendReject(msg) {
-  // Remove from pending if applicable
-  state.pendingRequests = state.pendingRequests.filter(r => r.requestId !== msg.requestId);
+  state.pendingRequests = state.pendingRequests.filter(r => r.requestId !== msg.requestId && r.sender !== msg.username);
+  if (msg.username) state.pendingSentByTarget.delete(msg.username);
   updateFriendReqBadge();
+  if (state.viewedProfile && (state.viewedProfile.username === msg.username || state.viewedProfile.requestId === msg.requestId)) {
+    state.viewedProfile.relationship = 'stranger';
+    state.viewedProfile.requestId = null;
+    refreshRelationshipUI(state.viewedProfile.username);
+  }
 }
 
 function onFriendCancel(msg) {
-  // Cancelled by sender
+  const target = msg.to || state.viewedProfile?.username;
+  if (target) state.pendingSentByTarget.delete(target);
+  if (state.viewedProfile && (state.viewedProfile.requestId === msg.requestId || state.viewedProfile.username === target)) {
+    state.viewedProfile.relationship = 'stranger';
+    state.viewedProfile.requestId = null;
+    refreshRelationshipUI(state.viewedProfile.username);
+  } else if (target) {
+    refreshRelationshipUI(target);
+  }
 }
 
 function onUnfriend(msg) {
   const other = msg.username;
   state.friends = state.friends.filter(f => f.username !== other);
+  state.pendingSentByTarget.delete(other);
   showToast(`Đã hủy kết bạn với ${other}.`, 'info');
+  if (state.viewedProfile?.username === other) {
+    state.viewedProfile.relationship = 'stranger';
+    state.viewedProfile.requestId = null;
+  }
+  refreshRelationshipUI(other);
   renderConversationList();
 }
 
 function onUserProfile(msg) {
+  if (msg.lastSeen) state.lastSeenMap.set(msg.username, msg.lastSeen);
+  if (msg.status === 'pending_sent' && msg.requestId) {
+    state.pendingSentByTarget.set(msg.username, msg.requestId);
+  } else if (msg.status !== 'pending_sent') {
+    state.pendingSentByTarget.delete(msg.username);
+  }
   state.viewedProfile = {
     username: msg.username,
     phone: msg.phone,
     online: msg.content === 'online',
     relationship: msg.status,
-    requestId: msg.requestId,
+    requestId: msg.requestId || state.pendingSentByTarget.get(msg.username) || null,
+    lastSeen: msg.lastSeen || state.lastSeenMap.get(msg.username) || null,
+    avatarPath: msg.avatarPath || state.userProfiles.get(msg.username)?.avatarPath || null,
   };
   renderProfileCard(state.viewedProfile);
   if (state.profileTarget === msg.username) renderProfileRelationshipActions();
+  const current = state.conversations.get(state.currentConvId);
+  if (current?.type === 'dm' && current.name === msg.username) updateStrangerBanner(msg.username);
 }
 
 function onMessageReaction(msg) {
@@ -561,30 +700,64 @@ function onConversationDeleted(msg) {
     state.currentConvId = null;
     dom.chatArea.style.display = 'none'; dom.emptyState.style.display = 'flex';
   }
+  updateUnreadBadge();
   renderConversationList(); closeConversationOptions();
 }
 function onGroupUpdated(msg) {
-  state.groups.set(msg.id,msg);
+  const existing = state.groups.get(msg.id) || {};
+  const merged = { ...existing, ...msg };
+  state.groups.set(msg.id, merged);
   const convId=`group:${msg.id}`;
   const conv=state.conversations.get(convId);
-  if(conv) conv.name=msg.name;
-  else ensureConversation(convId,'group',msg.name,msg.members||[]);
+  if(conv) conv.name=merged.name;
+  else ensureConversation(convId,'group',merged.name,merged.members||[]);
   renderConversationList();
-  if(state.currentConvId===convId) selectConversation(convId);
+  if(state.currentConvId===convId) {
+    dom.chatHeaderName.textContent = merged.name;
+    dom.chatHeaderAv.innerHTML = groupAvatarInner(msg.id, merged.name);
+    updateChatHeaderStatus();
+    renderMessages();
+  }
 }
 function onGroupDeleted(msg) {
   state.groups.delete(msg.groupId);state.conversations.delete(`group:${msg.groupId}`);
   if(state.currentConvId===`group:${msg.groupId}`){state.currentConvId=null;dom.chatArea.style.display='none';dom.emptyState.style.display='flex';}
+  if (msg.kickedBy) showToast(`Bạn đã bị ${msg.kickedBy} xóa khỏi nhóm.`, 'info');
+  updateUnreadBadge();
   renderConversationList();
 }
 
 function onSearchResults(msg) {
   state.searchResults = msg.searchResults || [];
   if (dom.phoneSearchInput.value.trim() && dom.phoneSearchResult) {
-    // This came from phone search
     renderPhoneSearchResult(state.searchResults);
-  } else {
-    renderConversationList();
+  }
+}
+
+function updateUnreadBadge() {
+  let totalUnreadConvs = 0;
+  let totalUnreadMsgs = 0;
+  for (const conv of state.conversations.values()) {
+    if (conv.type === 'global') continue;
+    const u = Number(conv.unread || 0);
+    if (u > 0) {
+      totalUnreadConvs++;
+      totalUnreadMsgs += u;
+    }
+  }
+  const unreadTab = $('tab-unread');
+  if (unreadTab) {
+    unreadTab.innerHTML = 'Chưa đọc' + (totalUnreadMsgs > 0 ? `<span class="tab-badge">${totalUnreadMsgs > 99 ? '99+' : totalUnreadMsgs}</span>` : '');
+  }
+  const navBadge = $('unread-nav-badge');
+  if (navBadge) {
+    if (totalUnreadMsgs > 0) {
+      navBadge.style.display = 'block';
+      navBadge.textContent = totalUnreadMsgs > 99 ? '99+' : totalUnreadMsgs;
+      navBadge.title = `${totalUnreadMsgs} tin nhắn chưa đọc (${totalUnreadConvs} cuộc trò chuyện)`;
+    } else {
+      navBadge.style.display = 'none';
+    }
   }
 }
 
@@ -626,8 +799,9 @@ function dmConvId(a, b) {
 function pushMessage(convId, msg) {
   const conv = state.conversations.get(convId);
   if (!conv) return;
+  const isSys = msg.type === 'system' || msg.messageType === 'system' || msg.username === 'SYSTEM';
   const msgObj = {
-    type: msg.type, from: msg.username || msg.from, to: msg.to,
+    type: isSys ? 'system' : msg.type, from: msg.username || msg.from, to: msg.to,
     content: msg.content || '', timestamp: msg.timestamp || new Date().toISOString(),
     messageId: msg.messageId, fileId: msg.fileId, filename: msg.filename,
     fileSize: msg.fileSize, mimeType: msg.mimeType, reactions: msg.reactions || [],
@@ -635,20 +809,57 @@ function pushMessage(convId, msg) {
   };
   if (msgObj.messageId && conv.messages.some(m => m.messageId === msgObj.messageId)) return;
   conv.messages.push(msgObj);
-  conv.lastMsg = msgObj.content || (msgObj.mimeType?.startsWith('image/') ? '🖼️ Ảnh' : msgObj.mimeType?.startsWith('video/') ? '🎬 Video' : (msgObj.filename ? `📄 ${msgObj.filename}` : ''));
+  conv.lastMsg = msgObj.content || (msgObj.mimeType?.startsWith('image/') ? '[Hình ảnh]' : msgObj.mimeType?.startsWith('video/') ? '[Video]' : (msgObj.filename ? `[Tệp] ${msgObj.filename}` : ''));
   conv.lastTime = formatTime(msgObj.timestamp);
   conv.lastTimestamp = msgObj.timestamp;
   if (state.currentConvId === convId) {
     renderMessages(msgObj.from === state.username);
     wsSend({type:'mark_read',conversationId:convId});
     if (state.rightPanelOpen) renderRightPanel();
-  } else if (msgObj.from !== state.username) {
+  } else if (msgObj.from !== state.username && !isSys) {
     conv.unread = (conv.unread || 0) + 1;
     if (!state.mutedConversations.has(convId) && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try { new Notification(conv.name, { body: msgObj.content || (msgObj.mimeType?.startsWith('image/') ? 'Đã gửi một ảnh' : 'Đã gửi tệp đính kèm') }); } catch (_) {}
     }
   }
+  updateUnreadBadge();
   renderConversationList();
+}
+
+function getRelationshipWith(username) {
+  if (state.friends.some(f => f.username === username)) return { rel: 'friend', requestId: null };
+  const recv = state.pendingRequests.find(r => r.sender === username);
+  if (recv) return { rel: 'pending_received', requestId: recv.requestId };
+  if (state.pendingSentByTarget.has(username)) return { rel: 'pending_sent', requestId: state.pendingSentByTarget.get(username) };
+  if (state.viewedProfile?.username === username && state.viewedProfile.relationship) {
+    return { rel: state.viewedProfile.relationship, requestId: state.viewedProfile.requestId };
+  }
+  return { rel: 'stranger', requestId: null };
+}
+
+function updateStrangerBanner(otherUsername) {
+  const strangerBanner = $('stranger-banner');
+  const actionsEl = $('stranger-banner-actions');
+  const isFriend = state.friends.some(f => f.username === otherUsername);
+  if (dom.attachBtn) dom.attachBtn.style.display = isFriend ? 'flex' : 'none';
+  if (dom.micBtn) dom.micBtn.style.display = isFriend ? 'flex' : 'none';
+  if (dom.messageInput) dom.messageInput.placeholder = !isFriend ? 'Nhắn tin cho người lạ...' : 'Nhập tin nhắn...';
+  if (!strangerBanner) return;
+  if (isFriend) {
+    strangerBanner.style.display = 'none';
+    return;
+  }
+  strangerBanner.style.display = 'flex';
+  const { rel, requestId } = getRelationshipWith(otherUsername);
+  if (actionsEl) {
+    if (rel === 'pending_sent') {
+      actionsEl.innerHTML = `<button class="gm-btn" onclick="cancelFriendRequest('${escHtml(requestId || '')}','${escHtml(otherUsername)}')">Hủy lời mời</button>`;
+    } else if (rel === 'pending_received') {
+      actionsEl.innerHTML = `<button class="gm-btn" style="background:#0866d6;color:#fff;border-color:#0866d6" onclick="acceptFriendRequest('${escHtml(requestId || '')}','${escHtml(otherUsername)}')">Đồng ý kết bạn</button>`;
+    } else {
+      actionsEl.innerHTML = `<button class="gm-btn" style="background:#0866d6;color:#fff;border-color:#0866d6" onclick="sendFriendRequest('${escHtml(otherUsername)}')">+ Kết bạn</button>`;
+    }
+  }
 }
 
 // ─── Select conversation ───────────────────────────────────────────────────────
@@ -657,34 +868,29 @@ function selectConversation(convId) {
   const conv = state.conversations.get(convId);
   if (!conv) return;
   conv.unread = 0;
+  updateUnreadBadge();
   wsSend({type:'mark_read',conversationId:convId});
 
   dom.emptyState.style.display = 'none';
   dom.chatArea.style.display = 'flex';
 
-  const initials = getInitials(conv.name);
-  if (conv.type === 'dm') requestUserProfile(conv.name, true);
-  if (conv.type === 'dm') dom.chatHeaderAv.innerHTML = userAvatarInner(conv.name);
-  else dom.chatHeaderAv.textContent = initials;
+  if (conv.type === 'dm') {
+    requestUserProfile(conv.name, true);
+    wsSend({ type: 'user_profile', username: conv.name });
+    dom.chatHeaderAv.innerHTML = userAvatarInner(conv.name);
+    updateStrangerBanner(conv.name);
+  } else {
+    const gid = convId.replace('group:', '');
+    dom.chatHeaderAv.innerHTML = groupAvatarInner(gid, conv.name);
+    const strangerBanner = $('stranger-banner');
+    if (strangerBanner) strangerBanner.style.display = 'none';
+    if (dom.attachBtn) dom.attachBtn.style.display = 'flex';
+    if (dom.micBtn) dom.micBtn.style.display = 'flex';
+    if (dom.messageInput) dom.messageInput.placeholder = 'Nhập tin nhắn...';
+  }
   dom.chatHeaderAv.className = 'chat-hdr-avatar' + (conv.type === 'group' ? ' group' : '');
   dom.chatHeaderName.textContent = conv.name;
-  const isFriend = conv.type !== 'dm' || state.friends.some(f=>f.username===conv.name);
-  let strangerBanner=$('stranger-banner');
-  if(strangerBanner) strangerBanner.style.display=conv.type==='dm'&&!isFriend?'flex':'none';
-  if(dom.attachBtn) dom.attachBtn.style.display=isFriend?'flex':'none';
-  if(dom.micBtn) dom.micBtn.style.display=isFriend?'flex':'none';
-  if(dom.messageInput) dom.messageInput.placeholder=conv.type==='dm'&&!isFriend?'Nhắn tin cho người lạ...':'Nhập tin nhắn...';
-
-  if (conv.type === 'dm') {
-    const online = state.onlineUsers.includes(conv.name);
-    dom.chatHeaderStatus.textContent = online ? '● Online' : '○ Offline';
-    dom.chatHeaderStatus.style.color = online ? '#2ecc71' : '#aaa';
-  } else if (conv.type === 'group') {
-    const g = state.groups.get(convId.replace('group:',''));
-    const cnt = g?.members?.length || 0;
-    dom.chatHeaderStatus.textContent = `${cnt} thành viên`;
-    dom.chatHeaderStatus.style.color = '#0068ff';
-  }
+  updateChatHeaderStatus();
 
   if (conv.messages.length === 0) {
     wsSend({ type: 'history', conversationId: convId });
@@ -699,7 +905,7 @@ function selectConversation(convId) {
 
 // ─── Render conversation list ─────────────────────────────────────────────────
 function renderConversationList() {
-  const filter = dom.searchInput.value.toLowerCase();
+  const filter = dom.searchInput.value.trim().toLowerCase();
   const tab = state.activeTab;
   dom.convList.innerHTML = '';
 
@@ -719,16 +925,15 @@ function renderConversationList() {
         <div class="conv-avatar">${userAvatarInner(f.username)}${f.online ? '<span class="online-dot"></span>' : ''}</div>
         <div class="conv-info">
           <div class="conv-name">${escHtml(f.username)}</div>
-          <div class="conv-last" style="color:${f.online ? '#2ecc71' : '#999'}">${f.online ? '● Online' : '○ Offline'}</div>
+          <div class="conv-last" style="color:${f.online ? '#2ecc71' : '#8893a4'}">${escHtml(formatPresenceStatus(f.username, f.online))}</div>
         </div>
-        <button onclick="event.stopPropagation();unfriend('${escHtml(f.username)}')" style="background:none;border:none;cursor:pointer;color:#999;font-size:12px;padding:4px 8px;border-radius:6px;" title="Hủy kết bạn">✕</button>`;
+        <button onclick="event.stopPropagation();confirmUnfriend('${escHtml(f.username)}')" style="background:none;border:none;cursor:pointer;color:#999;font-size:12px;padding:4px 8px;border-radius:6px;" title="Hủy kết bạn">✕</button>`;
       dom.convList.appendChild(item);
     }
     return;
   }
 
   if (tab === 'requests') {
-    // Show pending friend requests received
     if (state.pendingRequests.length === 0) {
       dom.convList.innerHTML = '<div style="padding:24px;text-align:center;color:#aaa;font-size:13px">Không có lời mời nào</div>';
       return;
@@ -738,7 +943,7 @@ function renderConversationList() {
       item.className = 'friend-req-item';
       item.style.margin = '8px 12px';
       item.innerHTML = `
-        <div class="conv-avatar" style="width:40px;height:40px;font-size:15px">${getInitials(req.sender)}</div>
+        <div class="conv-avatar" style="width:40px;height:40px;font-size:15px">${userAvatarInner(req.sender)}</div>
         <div class="freq-info">
           <div class="freq-name">${escHtml(req.sender)}</div>
           <div class="freq-time">${formatTime(req.createdAt)}</div>
@@ -752,32 +957,7 @@ function renderConversationList() {
     return;
   }
 
-  // Search results
-  if (filter && state.searchResults.length) {
-    const hd = document.createElement('div');
-    hd.style.cssText = 'padding:8px 16px 4px;font-size:12px;font-weight:700;color:#888;text-transform:uppercase';
-    hd.textContent = 'Kết quả tìm kiếm';
-    dom.convList.appendChild(hd);
-    for (const r of state.searchResults) {
-      if (r.username === state.username) continue;
-      const item = document.createElement('div');
-      item.className = 'conv-item';
-      item.onclick = () => {
-        const id = dmConvId(state.username, r.username);
-        ensureConversation(id, 'dm', r.username, []);
-        selectConversation(id);
-      };
-      item.innerHTML = `
-        <div class="conv-avatar">${userAvatarInner(r.username)}</div>
-        <div class="conv-info">
-          <div class="conv-name">${escHtml(r.username)}</div>
-          <div class="conv-last">${escHtml(r.phone || 'Tài khoản')}</div>
-        </div>`;
-      dom.convList.appendChild(item);
-    }
-  }
-
-  // Conversations
+  // Không tìm kiếm người chưa kết bạn ở danh sách đoạn chat: chỉ lọc trong các đoạn chat hiện có (hoặc bạn bè đã kết bạn / nhóm đã tham gia)
   const convArray = [...state.conversations.entries()].sort((a,b) => new Date(b[1].lastTimestamp || 0) - new Date(a[1].lastTimestamp || 0));
   for (const [convId, conv] of convArray) {
     if (tab === 'groups' && conv.type !== 'group') continue;
@@ -792,9 +972,10 @@ function renderConversationList() {
     const isOnline = conv.type === 'dm' && state.onlineUsers.includes(conv.name);
     const avClass = conv.type === 'group' ? 'conv-avatar group' : 'conv-avatar';
     const dot = isOnline ? '<span class="online-dot"></span>' : '';
+    const gid = conv.type === 'group' ? convId.replace('group:', '') : '';
 
     item.innerHTML = `
-      <div class="${avClass}">${conv.type === 'dm' ? userAvatarInner(conv.name) : getInitials(conv.name)}${dot}</div>
+      <div class="${avClass}">${conv.type === 'dm' ? userAvatarInner(conv.name) : groupAvatarInner(gid, conv.name)}${dot}</div>
       <div class="conv-info">
         <div class="conv-name">${escHtml(conv.name)}</div>
         ${conv.type==='dm'&&!state.friends.some(f=>f.username===conv.name)?'<div style="font-size:10px;color:#a0a7b4">Người lạ</div>':''}
@@ -817,18 +998,30 @@ function requestUserProfile(username, force = false) {
   wsSend({ type: 'get_posts', username });
 }
 
-function avatarMarkup(username, className = 'msg-av') {
+function avatarMarkup(username, className = 'msg-av', clickableInGroup = false) {
   const profile = state.userProfiles.get(username);
   const avatarPath = profile?.avatarPath;
+  const extraClass = clickableInGroup ? ' clickable-av' : '';
+  const clickAttr = clickableInGroup ? ` onclick="openAvatarActionMenu(event, '${escHtml(username || '')}')"` : '';
   return avatarPath
-    ? `<div class="${className}" title="${escHtml(username || '')}"><img src="${escHtml(avatarPath)}" alt="Ảnh đại diện ${escHtml(username || '')}"></div>`
-    : `<div class="${className}" title="${escHtml(username || '')}">${getInitials(username || '?')}</div>`;
+    ? `<div class="${className}${extraClass}" title="${escHtml(username || '')}"${clickAttr}><img src="${escHtml(avatarPath)}" alt="Ảnh đại diện ${escHtml(username || '')}"></div>`
+    : `<div class="${className}${extraClass}" title="${escHtml(username || '')}"${clickAttr}>${getInitials(username || '?')}</div>`;
+}
+
+function groupAvatarInner(groupId, groupName) {
+  const g = state.groups.get(groupId);
+  if (g?.avatarPath) {
+    return `<img src="${escHtml(g.avatarPath)}" alt="Ảnh nhóm ${escHtml(groupName || g.name || '')}">`;
+  }
+  return getInitials(groupName || g?.name || '?');
 }
 
 function onPostsResult(msg) {
   const username = msg.username || msg.profile?.username;
+  state.lastPostsPayload = msg;
   let avatarChanged = false;
   if (username) {
+    if (msg.profile?.lastSeen) state.lastSeenMap.set(username, msg.profile.lastSeen);
     avatarChanged = (state.userProfiles.get(username)?.avatarPath || '') !== (msg.profile?.avatarPath || '');
     state.profileRequests.delete(username);
     state.userProfiles.set(username, { ...(msg.profile || {}), username });
@@ -841,8 +1034,11 @@ function onPostsResult(msg) {
   }
   const activeConv = state.conversations.get(state.currentConvId);
   if (avatarChanged) renderConversationList();
-  if (activeConv?.type === 'dm' && activeConv.name === username && msg.profile?.avatarPath) {
-    dom.chatHeaderAv.innerHTML = `<img src="${escHtml(msg.profile.avatarPath)}" alt="Ảnh đại diện">`;
+  if (activeConv?.type === 'dm' && activeConv.name === username) {
+    dom.chatHeaderAv.innerHTML = msg.profile?.avatarPath
+      ? `<img src="${escHtml(msg.profile.avatarPath)}" alt="Ảnh đại diện">`
+      : getInitials(username);
+    updateChatHeaderStatus();
   }
   // Chỉ render nội dung trang cá nhân khi phản hồi đúng trang đang mở.
   if (state.profileTarget === username) renderProfilePage(msg);
@@ -851,16 +1047,20 @@ function onPostsResult(msg) {
 
 function onProfileUpdated(msg) {
   const username = msg.username || state.username;
-  if (username && (msg.avatarPath !== undefined || msg.coverPath !== undefined)) {
+  if (username && (msg.avatarPath !== undefined || msg.coverPath !== undefined || msg.bio !== undefined)) {
     const old = state.userProfiles.get(username) || { username };
     state.userProfiles.set(username, { ...old, ...msg });
-    if (username === state.username && dom.userAvatarBtn && msg.avatarPath) {
-      dom.userAvatarBtn.innerHTML = `<img src="${escHtml(msg.avatarPath)}" alt="Ảnh đại diện">`;
+    if (username === state.username && dom.userAvatarBtn) {
+      dom.userAvatarBtn.innerHTML = msg.avatarPath
+        ? `<img src="${escHtml(msg.avatarPath)}" alt="Ảnh đại diện">`
+        : getInitials(username);
     }
     renderConversationList();
     if (state.currentConvId) renderMessages();
+    if (state.profileTarget === username) {
+      wsSend({ type: 'get_posts', username });
+    }
   } else if (username) {
-    // Một số backend chỉ gửi ACK; tải lại profile để nhận avatar mới nhất.
     state.userProfiles.delete(username);
     state.profileRequests.delete(username);
     requestUserProfile(username, true);
@@ -879,11 +1079,23 @@ function renderMessages(forceBottom = false) {
   if (!conv) return;
   state.renderedConvId = state.currentConvId;
 
+  if (!conv.messages || conv.messages.length === 0) {
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'conv-empty-watermark';
+    emptyEl.innerHTML = `
+      <div class="conv-empty-watermark-text">Hãy bắt đầu cuộc trò chuyện</div>
+      <div class="conv-empty-watermark-sub">Gửi tin nhắn hoặc chia sẻ tệp với ${escHtml(conv.name)}</div>
+    `;
+    dom.messages.appendChild(emptyEl);
+    return;
+  }
+
   let lastDay = '';
   let previous = null;
 
   for (const msg of conv.messages) {
-    if (msg.from) requestUserProfile(msg.from);
+    const isSys = msg.type === 'system' || msg.messageType === 'system' || msg.from === 'SYSTEM';
+    if (!isSys && msg.from) requestUserProfile(msg.from);
     const day = getDayLabel(msg.timestamp);
 
     // Mỗi ngày mới bắt đầu một nhóm tin nhắn mới.
@@ -894,6 +1106,12 @@ function renderMessages(forceBottom = false) {
       dom.messages.appendChild(dayLabel);
       lastDay = day;
       previous = null;
+    }
+
+    if (isSys) {
+      appendMessageDOM(msg, false);
+      previous = null;
+      continue;
     }
 
     const currentTime = new Date(msg.timestamp).getTime();
@@ -921,26 +1139,43 @@ function renderMessages(forceBottom = false) {
     previous = msg;
   }
 
+  // Nếu đang mở thanh tìm kiếm tin nhắn, giữ lại highlight từ khóa
+  if (state.msgSearchActive && dom.msgSearchInput?.value.trim()) {
+    performMsgSearch(dom.msgSearchInput.value, false);
+  }
+
   // Chỉ cuộn xuống cuối khi đổi đoạn chat, đang ở cuối, hoặc chính mình vừa gửi; còn lại giữ nguyên vị trí đang xem.
   if (forceBottom || !sameConv || nearBottom) scrollToBottom();
   else box.scrollTop = prevTop;
 }
 
 function appendMessageDOM(msg, grouped=false) {
-  if (msg.type === 'system') { const el=document.createElement('div');el.className='msg-system';el.textContent=msg.content;dom.messages.appendChild(el);return; }
+  const msgType=typeof msg.type==='string'?msg.type.toLowerCase():'';
+  if (msgType === 'system' || msg.messageType === 'system' || msg.from === 'SYSTEM') {
+    const el=document.createElement('div');
+    el.className='msg-system';
+    el.textContent=msg.content;
+    dom.messages.appendChild(el);
+    return;
+  }
   const isMine=msg.from===state.username;
   const wrapper=document.createElement('div');
   wrapper.className=`message-item ${isMine?'mine':'theirs'}${grouped?' grouped':''}`;
   if(msg.messageId)wrapper.dataset.msgId=msg.messageId;
-  const msgType=typeof msg.type==='string'?msg.type.toLowerCase():'';
-  const inDm=state.currentConvId?.startsWith('dm:'),showSender=!isMine&&!inDm;
+  const inDm=state.currentConvId?.startsWith('dm:');
+  const inGroup=state.currentConvId?.startsWith('group:');
+  const groupObj=inGroup?state.groups.get(state.currentConvId.replace('group:','')):null;
+  const isGroupOwner=Boolean(inGroup && groupObj && groupObj.createdBy === state.username);
+  const canRevokeBothSides=isMine || isGroupOwner;
+  const showSender=!isMine&&!inDm;
   const senderInCard=msgType==='file_share'&&isFileCardMsg(msg);
   let bubbleContent=msgType==='file_share'?buildFileBubble(msg,isMine,showSender):`<div class="msg-bubble">${renderMessageText(msg.content)}</div>`;
   const time=formatTime(msg.timestamp);
   const replyCard=msg.replyToId?`<div class="message-reply-context"><b>${escHtml(msg.replyToUsername||'')}</b><span>${escHtml(msg.replyToContent||'Tin nhắn được trả lời')}</span></div>`:'';
   const bodyHtml=`<div class="msg-body">${showSender&&!senderInCard?`<div class="msg-sender">${escHtml(msg.from||'')}</div>`:''}${replyCard}${bubbleContent}<div class="msg-time">${time}</div></div>`;
-  // Avatar nằm cùng hàng với bong bóng; tin nhắn nối tiếp dùng spacer để giữ trục căn lề.
-  const senderAvatar = grouped ? '<div class="msg-av-spacer" aria-hidden="true"></div>' : avatarMarkup(msg.from || '?');
+  // Avatar nằm cùng hàng với bong bóng; trong nhóm có thể bấm vào avatar người khác để mở combobox thao tác.
+  const clickableAvatar = inGroup && !isMine && Boolean(msg.from);
+  const senderAvatar = grouped ? '<div class="msg-av-spacer" aria-hidden="true"></div>' : avatarMarkup(msg.from || '?', 'msg-av', clickableAvatar);
   wrapper.innerHTML = `${senderAvatar}${bodyHtml}`;
   if(msgType==='revoked'){
     const body=wrapper.querySelector('.msg-body');
@@ -959,20 +1194,65 @@ function appendMessageDOM(msg, grouped=false) {
   const reactionPills=(msg.messageId&&reactionItems)?`<div class="msg-reactions">${reactionItems}</div>`:'';
   const actions=msg.messageId?`<div class="msg-actions">
     <button class="msg-action-btn" onclick="replyToMessage('${msg.messageId}')">Trả lời</button><button class="msg-action-btn" onclick="forwardMessage('${msg.messageId}')">Chuyển tiếp</button>
-    ${isMine?`<button class="msg-action-btn" onclick="hideMessageForMe('${msg.messageId}')">Xóa ở phía tôi</button><button class="msg-action-btn" onclick="revokeMessage('${msg.messageId}')">Thu hồi hai phía</button>`:''}
+    ${isMine?`<button class="msg-action-btn" onclick="hideMessageForMe('${msg.messageId}')">Xóa ở phía tôi</button>`:''}
+    ${canRevokeBothSides?`<button class="msg-action-btn" onclick="revokeMessage('${msg.messageId}')">Thu hồi hai phía</button>`:''}
   </div>`:'';
   const body=wrapper.querySelector('.msg-body');
   if(body) {
     body.insertAdjacentHTML('beforeend', actions);
-    // Gắn nút cảm xúc trực tiếp vào bong bóng để nó luôn nằm ở góc dưới-phải của tin nhắn,
-    // không bị đẩy xuống hoặc đè lên hàng thao tác.
-    // Nút cảm xúc nằm cạnh bong bóng; các emoji đã thả hiện thành hàng ngang ngay dưới bong bóng.
     const bubble = body.querySelector('.msg-bubble');
     if (bubble && reactionBox) bubble.insertAdjacentHTML('beforeend', reactionBox);
     else if (reactionBox) body.insertAdjacentHTML('afterbegin', reactionBox);
     if (bubble && reactionPills) bubble.insertAdjacentHTML('afterend', reactionPills);
   }
   dom.messages.appendChild(wrapper);
+}
+
+// ─── Combobox / Popover khi bấm vào Avatar người nhắn trong nhóm ──────────────
+function closeAvatarActionMenu() {
+  document.querySelector('.avatar-action-popover')?.remove();
+}
+
+function openAvatarActionMenu(event, targetUsername) {
+  event.stopPropagation();
+  closeAvatarActionMenu();
+  if (!targetUsername || targetUsername === state.username) return;
+  const inGroup = state.currentConvId?.startsWith('group:');
+  const gid = inGroup ? state.currentConvId.replace('group:', '') : '';
+  const groupObj = inGroup ? state.groups.get(gid) : null;
+  const isOwner = Boolean(groupObj && groupObj.createdBy === state.username);
+
+  const menu = document.createElement('div');
+  menu.className = 'avatar-action-popover';
+  menu.innerHTML = `
+    <div class="avatar-popover-head">${userAvatarInner(targetUsername)}<span>${escHtml(targetUsername)}</span></div>
+    <button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();startChat('${escHtml(targetUsername)}')">
+      ${UI_ICONS.chat}<span>Nhắn tin</span>
+    </button>
+    <button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();openProfilePage('${escHtml(targetUsername)}')">
+      ${UI_ICONS.user}<span>Xem trang cá nhân</span>
+    </button>
+    ${isOwner ? `<button type="button" class="avatar-popover-item danger" onclick="closeAvatarActionMenu();kickGroupMember('${escHtml(gid)}','${escHtml(targetUsername)}')">
+      ${UI_ICONS.userMinus}<span>Xóa khỏi nhóm</span>
+    </button>` : ''}
+  `;
+  document.body.appendChild(menu);
+
+  const rect = event.currentTarget.getBoundingClientRect();
+  const menuW = 205;
+  const menuH = isOwner ? 148 : 112;
+  let left = rect.right + 8;
+  let top = rect.top;
+  if (left + menuW > window.innerWidth - 12) left = Math.max(12, rect.left - menuW - 8);
+  if (top + menuH > window.innerHeight - 12) top = Math.max(12, window.innerHeight - menuH - 12);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function kickGroupMember(groupId, targetUsername) {
+  if (!groupId || !targetUsername) return;
+  if (!confirm(`Bạn có chắc chắn muốn xóa ${targetUsername} khỏi nhóm không?`)) return;
+  wsSend({ type: 'group_remove_member', groupId, username: targetUsername });
 }
 
 function showReactionPeople(messageId){
@@ -1030,10 +1310,64 @@ function markFileDownloaded(fileId) {
 
 const FILE_CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="8 12.5 11 15.5 16 9.5"/></svg>';
 
+function formatDateTimeFull(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('vi-VN', {
+    hour: '2-digit', minute: '2-digit',
+    day: '2-digit', month: '2-digit', year: 'numeric'
+  });
+}
+
+async function saveFileWithLocation(url, rawFilename, fileId) {
+  const suggestedName = rawFilename || 'downloaded_file';
+  try {
+    if (typeof window.showSaveFilePicker === 'function') {
+      const extMatch = suggestedName.includes('.') ? '.' + suggestedName.split('.').pop().toLowerCase() : '';
+      const opts = { suggestedName };
+      if (extMatch && /^\.[a-z0-9]{1,10}$/.test(extMatch)) {
+        opts.types = [{ description: 'Tệp đính kèm', accept: { 'application/octet-stream': [extMatch] } }];
+      }
+      const handle = await window.showSaveFilePicker(opts);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Không thể tải tệp từ máy chủ.');
+      const blob = await res.blob();
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      if (fileId) markFileDownloaded(fileId);
+      showToast(`Đã lưu "${handle.name}" vào vị trí bạn chọn!`, 'success');
+      return;
+    }
+    // Fallback cho trình duyệt không bật showSaveFilePicker: cho phép đặt tên tệp trước khi lưu
+    const customName = prompt('Nhập tên tệp để lưu xuống máy:', suggestedName);
+    if (customName === null) return;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Không thể tải tệp từ máy chủ.');
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = customName.trim() || suggestedName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+    if (fileId) markFileDownloaded(fileId);
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // Người dùng bấm Cancel hộp thoại chọn thư mục
+    showToast('Không thể lưu tệp: ' + (err.message || 'Lỗi'), 'error');
+  }
+}
+
 function buildFileBubble(msg, isMine, showSender = false) {
   const url = `/api/files/${encodeURIComponent(msg.fileId || '')}`;
   const filename = escHtml(msg.filename || 'Tệp đính kèm');
+  const rawName = (msg.filename || 'Tệp đính kèm').replace(/'/g, "\\'");
   const mime = msg.mimeType || '';
+  const author = escHtml(msg.from || msg.username || '');
+  const sentAt = formatDateTimeFull(msg.timestamp);
 
   if (mime.startsWith('image/')) {
     return `<div class="msg-bubble msg-image-only">
@@ -1051,7 +1385,7 @@ function buildFileBubble(msg, isMine, showSender = false) {
     const audioId = 'audio_' + (msg.messageId || Math.random().toString(36).slice(2));
     return `<div class="audio-player">
       <audio id="${audioId}" src="${url}" preload="metadata" controls playsinline></audio>
-      <a class="audio-dl" href="${url}" download="${filename}" title="Tải xuống">⬇</a>
+      <a class="audio-dl" href="${url}" download="${filename}" title="Tải xuống">${UI_ICONS.download}</a>
     </div>`;
   }
 
@@ -1059,7 +1393,7 @@ function buildFileBubble(msg, isMine, showSender = false) {
   const done = isMine || getDownloadedFiles().has(fileId);
   const statusText = isMine ? 'Đã gửi' : (done ? 'Đã tải xuống' : 'Nhấn để tải');
   return `<div class="msg-bubble file-card">
-    ${showSender ? `<div class="file-card-sender">${escHtml(msg.from || '')}</div>` : ''}
+    <div class="file-card-sender">Người gửi: <b>${author}</b> · ${escHtml(sentAt)}</div>
     <div class="file-card-main">
       ${fileTypeIcon(mime, msg.filename)}
       <div class="file-card-info">
@@ -1070,8 +1404,8 @@ function buildFileBubble(msg, isMine, showSender = false) {
         </div>
       </div>
       <div class="file-card-actions">
-        <a class="file-card-btn" href="${url}" target="_blank" rel="noopener noreferrer" title="Mở trong tab mới"><svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>
-        <a class="file-card-btn" href="${url}" download="${filename}" title="Tải xuống" onclick="markFileDownloaded('${escHtml(fileId)}')"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>
+        <button type="button" class="file-card-btn" title="Chọn đường dẫn lưu tệp (Save As...)" onclick="saveFileWithLocation('${url}','${rawName}','${escHtml(fileId)}')">${UI_ICONS.folderSave}</button>
+        <a class="file-card-btn" href="${url}" download="${filename}" title="Tải về thư mục Downloads" onclick="markFileDownloaded('${escHtml(fileId)}')">${UI_ICONS.download}</a>
       </div>
     </div>
   </div>`;
@@ -1130,36 +1464,122 @@ function toggleMsgSearch() {
   }
 }
 
+function clearMsgSearchHighlights() {
+  dom.messages.querySelectorAll('.search-active-msg').forEach(el => el.classList.remove('search-active-msg'));
+  dom.messages.querySelectorAll('mark.search-highlight').forEach(el => {
+    const parent = el.parentNode;
+    if (parent) {
+      parent.replaceChild(document.createTextNode(el.textContent), el);
+      parent.normalize();
+    }
+  });
+  state.msgSearchMatches = [];
+  state.msgSearchIndex = 0;
+}
+
 function closeMsgSearch() {
   state.msgSearchActive = false;
   dom.msgSearchBar?.classList.remove('visible');
   if (dom.msgSearchInput) dom.msgSearchInput.value = '';
   if (dom.msgSearchCount) dom.msgSearchCount.textContent = '';
   $('msg-search-toggle')?.classList.remove('active-panel');
-  // Clear highlights
-  dom.messages.querySelectorAll('.search-highlight').forEach(el => {
-    el.replaceWith(document.createTextNode(el.textContent));
-  });
+  clearMsgSearchHighlights();
 }
 
-function performMsgSearch(query) {
-  // Clear old highlights
-  dom.messages.querySelectorAll('.search-highlight').forEach(el => {
-    el.replaceWith(document.createTextNode(el.textContent));
+function highlightTextInElement(container, query) {
+  const marks = [];
+  const lowerQ = query.toLowerCase();
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      const p = node.parentElement;
+      if (!p) return NodeFilter.FILTER_REJECT;
+      if (p.closest('.message-reaction-area, .msg-actions, .msg-time, .file-card-actions, mark.search-highlight')) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return node.nodeValue.toLowerCase().includes(lowerQ) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
   });
-  if (!query.trim()) { if (dom.msgSearchCount) dom.msgSearchCount.textContent = ''; return; }
+  const textNodes = [];
+  let current;
+  while ((current = walker.nextNode())) textNodes.push(current);
 
-  const conv = state.conversations.get(state.currentConvId);
-  if (!conv) return;
-  const matches = conv.messages.filter(m => m.content && m.content.toLowerCase().includes(query.toLowerCase()));
-  dom.msgSearchCount.textContent = matches.length ? `${matches.length} kết quả` : 'Không tìm thấy';
-
-  // Highlight in DOM
-  if (matches.length > 0) {
-    const msgId = matches[0].messageId;
-    const el = dom.messages.querySelector(`[data-msg-id="${msgId}"]`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  for (const textNode of textNodes) {
+    const text = textNode.nodeValue;
+    const lower = text.toLowerCase();
+    let idx = 0;
+    let pos;
+    const frag = document.createDocumentFragment();
+    while ((pos = lower.indexOf(lowerQ, idx)) !== -1) {
+      if (pos > idx) frag.appendChild(document.createTextNode(text.slice(idx, pos)));
+      const mark = document.createElement('mark');
+      mark.className = 'search-highlight';
+      mark.textContent = text.slice(pos, pos + query.length);
+      frag.appendChild(mark);
+      marks.push(mark);
+      idx = pos + query.length;
+    }
+    if (idx < text.length) frag.appendChild(document.createTextNode(text.slice(idx)));
+    textNode.parentNode.replaceChild(frag, textNode);
   }
+  return marks;
+}
+
+function performMsgSearch(query, scrollToFirst = true) {
+  clearMsgSearchHighlights();
+  const clean = (query || '').trim();
+  if (!clean) {
+    if (dom.msgSearchCount) dom.msgSearchCount.textContent = '';
+    return;
+  }
+
+  const bubbles = dom.messages.querySelectorAll('.message-item .msg-bubble');
+  const allMarks = [];
+  bubbles.forEach(bubble => {
+    const found = highlightTextInElement(bubble, clean);
+    allMarks.push(...found);
+  });
+
+  state.msgSearchMatches = allMarks;
+  if (allMarks.length === 0) {
+    if (dom.msgSearchCount) dom.msgSearchCount.textContent = '0 kết quả';
+    return;
+  }
+  // Mặc định trỏ tới kết quả gần nhất (cuối danh sách) hoặc đầu danh sách
+  state.msgSearchIndex = 0;
+  focusMsgSearchMatch(state.msgSearchIndex, scrollToFirst);
+}
+
+function focusMsgSearchMatch(index, shouldScroll = true) {
+  const matches = state.msgSearchMatches || [];
+  if (!matches.length) {
+    if (dom.msgSearchCount) dom.msgSearchCount.textContent = '0 kết quả';
+    return;
+  }
+  const total = matches.length;
+  state.msgSearchIndex = ((index % total) + total) % total;
+
+  dom.messages.querySelectorAll('mark.search-highlight.active-match').forEach(el => el.classList.remove('active-match'));
+  dom.messages.querySelectorAll('.message-item.search-active-msg').forEach(el => el.classList.remove('search-active-msg'));
+
+  const targetMark = matches[state.msgSearchIndex];
+  if (targetMark) {
+    targetMark.classList.add('active-match');
+    const msgItem = targetMark.closest('.message-item');
+    if (msgItem) msgItem.classList.add('search-active-msg');
+    if (shouldScroll) {
+      (msgItem || targetMark).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+  if (dom.msgSearchCount) {
+    dom.msgSearchCount.textContent = `${state.msgSearchIndex + 1}/${total} kết quả`;
+  }
+}
+
+function stepMsgSearch(delta) {
+  const matches = state.msgSearchMatches || [];
+  if (!matches.length) return;
+  focusMsgSearchMatch(state.msgSearchIndex + delta, true);
 }
 
 // ─── URL rendering ────────────────────────────────────────────────────────────
@@ -1405,15 +1825,18 @@ function renderRightPanel() {
     let html = '';
     if (audios.length) {
       html += `<div style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px">Âm thanh (${audios.length})</div>`;
-      for (const m of audios) {
+      for (const m of audios.slice().reverse()) {
         const url = `/api/files/${encodeURIComponent(m.fileId)}`;
+        const sender = m.from || m.username || 'Không rõ';
+        const timeStr = formatDateTimeFull(m.timestamp);
         html += `<div class="shared-file-row">
-          <div class="shared-file-ico">🎵</div>
+          <div class="shared-file-ico" style="width:36px!important;height:36px;background:#eaf3ff!important;color:#0866d6;border-radius:9px">${UI_ICONS.music}</div>
           <div class="shared-file-info">
             <div class="shared-file-name">${escHtml(m.filename || 'Audio')}</div>
-            <div class="shared-file-meta">${escHtml(m.fileSize || '')} · ${formatTime(m.timestamp)}</div>
+            <div class="shared-file-meta">Người gửi: <b>${escHtml(sender)}</b> · ${escHtml(m.fileSize || '')}</div>
+            <div class="shared-file-meta">${escHtml(timeStr)}</div>
           </div>
-          <a class="shared-file-dl" href="${url}" download="${escHtml(m.filename || 'audio')}">⬇</a>
+          <a class="shared-file-dl" href="${url}" download="${escHtml(m.filename || 'audio')}" title="Tải xuống">${UI_ICONS.download}</a>
         </div>`;
       }
     }
@@ -1421,14 +1844,20 @@ function renderRightPanel() {
       html += `<div style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;margin:12px 0 8px">File (${files.length})</div>`;
       for (const m of files.slice().reverse()) {
         const url = `/api/files/${encodeURIComponent(m.fileId)}`;
-        const icon = getFileIcon(m.mimeType, m.filename);
+        const sender = m.from || m.username || 'Không rõ';
+        const timeStr = formatDateTimeFull(m.timestamp);
+        const rawName = (m.filename || 'file').replace(/'/g, "\\'");
         html += `<div class="shared-file-row">
           <div class="shared-file-ico">${fileTypeIcon(m.mimeType, m.filename)}</div>
           <div class="shared-file-info">
-            <div class="shared-file-name">${escHtml(m.filename || 'File')}</div>
-            <div class="shared-file-meta">${escHtml(m.fileSize || '')} · ${formatTime(m.timestamp)}</div>
+            <div class="shared-file-name" title="${escHtml(m.filename || 'File')}">${escHtml(m.filename || 'File')}</div>
+            <div class="shared-file-meta">Người gửi: <b>${escHtml(sender)}</b> · ${escHtml(m.fileSize || '')}</div>
+            <div class="shared-file-meta">${escHtml(timeStr)}</div>
           </div>
-          <a class="shared-file-dl" href="${url}" download="${escHtml(m.filename || 'file')}">⬇</a>
+          <div style="display:flex;gap:5px">
+            <button type="button" class="shared-file-dl" title="Chọn đường dẫn lưu tệp" onclick="saveFileWithLocation('${url}','${rawName}','${escHtml(m.fileId)}')">${UI_ICONS.folderSave}</button>
+            <a class="shared-file-dl" href="${url}" download="${escHtml(m.filename || 'file')}" title="Tải về thư mục Downloads" onclick="markFileDownloaded('${escHtml(m.fileId)}')">${UI_ICONS.download}</a>
+          </div>
         </div>`;
       }
     }
@@ -1484,42 +1913,47 @@ function renderPhoneSearchResult(results) {
 function renderProfileCard(profile) {
   if (!profile) return;
   const online = profile.online;
-  const rel = profile.relationship;
+  const { rel, requestId } = getRelationshipWith(profile.username);
+  const effectiveRel = profile.relationship || rel;
+  const effectiveReqId = profile.requestId || requestId || '';
   let actions = '';
 
-  if (rel === 'friend') {
+  if (effectiveRel === 'friend') {
     actions = `
       <button class="btn-friend btn-unfriend" onclick="confirmUnfriend('${escHtml(profile.username)}')">Hủy kết bạn</button>
       <button class="btn-friend btn-add-friend" onclick="startChat('${escHtml(profile.username)}')">Nhắn tin</button>`;
-  } else if (rel === 'pending_sent') {
-    actions = `<button class="btn-friend btn-cancel-req" onclick="cancelFriendRequest('${escHtml(profile.requestId)}','${escHtml(profile.username)}')">Hủy lời mời</button>`;
-  } else if (rel === 'pending_received') {
+  } else if (effectiveRel === 'pending_sent') {
+    actions = `<button class="btn-friend btn-cancel-req" onclick="cancelFriendRequest('${escHtml(effectiveReqId)}','${escHtml(profile.username)}')">Hủy lời mời</button>`;
+  } else if (effectiveRel === 'pending_received') {
     actions = `
-      <button class="btn-friend btn-accept-req" onclick="acceptFriendRequest('${escHtml(profile.requestId)}','${escHtml(profile.username)}')">Đồng ý</button>
-      <button class="btn-friend btn-reject-req" onclick="rejectFriendRequest('${escHtml(profile.requestId)}','${escHtml(profile.username)}')">Từ chối</button>`;
+      <button class="btn-friend btn-accept-req" onclick="acceptFriendRequest('${escHtml(effectiveReqId)}','${escHtml(profile.username)}')">Đồng ý</button>
+      <button class="btn-friend btn-reject-req" onclick="rejectFriendRequest('${escHtml(effectiveReqId)}','${escHtml(profile.username)}')">Từ chối</button>`;
   } else {
-    // stranger
     actions = `<button class="btn-friend btn-add-friend" onclick="sendFriendRequest('${escHtml(profile.username)}')">Kết bạn</button>`;
   }
 
   dom.phoneSearchResult.innerHTML = `
     <div class="profile-card">
-      <div class="profile-avatar">${getInitials(profile.username)}</div>
+      <div class="profile-avatar" style="overflow:hidden">${userAvatarInner(profile.username)}</div>
       <div class="profile-name" style="cursor:pointer" onclick="openProfilePage('${escHtml(profile.username)}')">${escHtml(profile.username)}</div>
       <div class="profile-phone">${escHtml(profile.phone || '')}</div>
-      <div class="profile-status ${online ? 'online' : 'offline'}">${online ? '● Online' : '○ Offline'}</div>
+      <div class="profile-status ${online ? 'online' : 'offline'}">${escHtml(formatPresenceStatus(profile.username, online))}</div>
       <div class="profile-actions">${actions}<button class="btn-friend" onclick="openProfilePage('${escHtml(profile.username)}')">Trang cá nhân</button></div>
     </div>`;
 }
 
 function sendFriendRequest(username) {
+  if (!username) return;
   wsSend({ type: 'friend_request', to: username });
   showToast(`Đã gửi lời mời kết bạn tới ${username}`, 'success');
-  if (state.viewedProfile) {
-    // Optimistic update
+  // Chuyển đổi trạng thái nút thành "Hủy lời mời" ngay lập tức trên mọi giao diện
+  state.pendingSentByTarget.set(username, state.pendingSentByTarget.get(username) || '');
+  if (!state.viewedProfile || state.viewedProfile.username !== username) {
+    state.viewedProfile = { username, relationship: 'pending_sent', requestId: '' };
+  } else {
     state.viewedProfile.relationship = 'pending_sent';
-    renderProfileCard(state.viewedProfile);
   }
+  refreshRelationshipUI(username);
 }
 
 function acceptFriendRequest(requestId, senderUsername) {
@@ -1538,11 +1972,14 @@ function rejectFriendRequest(requestId, senderUsername) {
 }
 
 function cancelFriendRequest(requestId, receiverUsername) {
-  wsSend({ type: 'friend_cancel', requestId });
-  if (state.viewedProfile) {
+  const reqId = requestId || (receiverUsername ? state.pendingSentByTarget.get(receiverUsername) : '') || '';
+  wsSend({ type: 'friend_cancel', requestId: reqId, to: receiverUsername });
+  if (receiverUsername) state.pendingSentByTarget.delete(receiverUsername);
+  if (state.viewedProfile && (!receiverUsername || state.viewedProfile.username === receiverUsername)) {
     state.viewedProfile.relationship = 'stranger';
-    renderProfileCard(state.viewedProfile);
+    state.viewedProfile.requestId = null;
   }
+  refreshRelationshipUI(receiverUsername || state.viewedProfile?.username);
   showToast('Đã hủy lời mời kết bạn.', 'info');
 }
 
@@ -1576,11 +2013,11 @@ function closeGroupModal() { $('group-modal-overlay').classList.remove('visible'
 function renderMemberList() {
   const list = $('member-list');
   list.innerHTML = '';
-  // Show friends + online users
-  const candidates = new Set([...state.onlineUsers, ...state.friends.map(f => f.username)]);
+  // Khi tạo nhóm mới, hiển thị danh sách bạn bè đã kết bạn
+  const candidates = new Set(state.friends.map(f => f.username));
   candidates.delete(state.username);
   if (candidates.size === 0) {
-    list.innerHTML = '<div style="padding:12px;text-align:center;color:#aaa;font-size:13px">Không có người dùng để thêm</div>';
+    list.innerHTML = '<div style="padding:12px;text-align:center;color:#aaa;font-size:13px">Bạn chưa có bạn bè nào để thêm vào nhóm</div>';
     return;
   }
   for (const user of candidates) {
@@ -1589,7 +2026,7 @@ function renderMemberList() {
     item.dataset.user = user;
     item.innerHTML = `
       <div class="member-chk">✓</div>
-      <div class="member-av">${getInitials(user)}</div>
+      <div class="member-av" style="overflow:hidden">${userAvatarInner(user)}</div>
       <span style="font-size:14px">${escHtml(user)}</span>`;
     item.onclick = () => item.classList.toggle('selected');
     list.appendChild(item);
@@ -1615,7 +2052,7 @@ function handleTypingInput() {
   typingTimer = setTimeout(() => { typingTimer = null; }, 2000);
 }
 
-// ─── Image viewer ─────────────────────────────────────────────────────────────
+// ─── Image viewer & Message actions ───────────────────────────────────────────
 function reactToMessage(messageId, emoji) {
   const conv=state.conversations.get(state.currentConvId); if(!conv)return;
   const msg=conv.messages.find(m=>m.messageId===messageId); if(!msg)return;
@@ -1631,44 +2068,286 @@ function hideMessageForMe(messageId) {
   wsSend({type:'delete_message_for_me',messageId,conversationId:state.currentConvId});
 }
 
+function optItem(iconSvg, label, onclickJs, danger = false) {
+  return `<button class="option-action${danger ? ' danger' : ''}" onclick="${onclickJs}">
+    <span class="opt-ico">${iconSvg}</span>
+    <span>${label}</span>
+  </button>`;
+}
+
 function openConversationOptions() {
   const conv=state.conversations.get(state.currentConvId);if(!conv)return;
   const root=$('conversation-options-content');if(!root)return;
   const isGroup=conv.type==='group';
-  const group=isGroup?state.groups.get(state.currentConvId.replace('group:','')):null;
+  const gid = isGroup ? state.currentConvId.replace('group:','') : '';
+  const group=isGroup?state.groups.get(gid):null;
   const other=conv.name;
   const muted=state.mutedConversations.has(conv.id);
   let html='';
   if(!isGroup){
     const blocked=state.blockedUsers.has(other);
-    html+=`<button class="option-action" onclick="openProfilePage('${escHtml(other)}');closeConversationOptions()">👤 Xem trang cá nhân</button>`;
-    html+=`<button class="option-action" onclick="toggleBlockUser('${escHtml(other)}',${blocked})">${blocked?'🔓 Gỡ chặn':'🚫 Chặn người này'}</button>`;
-    if(state.friends.some(f=>f.username===other)) html+=`<button class="option-action" onclick="confirmUnfriend('${escHtml(other)}');closeConversationOptions()">👥 Hủy kết bạn</button>`;
+    html += optItem(UI_ICONS.user, 'Xem trang cá nhân', `openProfilePage('${escHtml(other)}');closeConversationOptions()`);
+    html += optItem(blocked ? UI_ICONS.unlock : UI_ICONS.ban, blocked ? 'Gỡ chặn người này' : 'Chặn người này', `toggleBlockUser('${escHtml(other)}',${blocked})`);
+    if(state.friends.some(f=>f.username===other)) {
+      html += optItem(UI_ICONS.userMinus, 'Hủy kết bạn', `confirmUnfriend('${escHtml(other)}');closeConversationOptions()`, true);
+    }
   } else {
     const isOwner=group?.createdBy===state.username;
-    html+=`<button class="option-action" onclick="showGroupMembers()">👥 Xem thành viên nhóm</button>`;
+    html += optItem(UI_ICONS.users, `Xem thành viên nhóm (${group?.members?.length || 0})`, `closeConversationOptions();showGroupMembers()`);
+    // Mọi thành viên trong nhóm đều có thể thêm thành viên mới
+    html += optItem(UI_ICONS.userPlus, 'Thêm thành viên', `closeConversationOptions();addGroupMember()`);
+    html += optItem(UI_ICONS.edit, 'Đổi tên & ảnh đại diện nhóm', `closeConversationOptions();openGroupEditInfoModal()`);
     if(isOwner){
-      html+=`<button class="option-action" onclick="addGroupMember()">➕ Thêm thành viên</button>`;
-      html+=`<button class="option-action" onclick="transferGroupOwner()">♛ Chuyển quyền trưởng nhóm</button>`;
-      html+=`<button class="option-action" onclick="leaveGroup()">↪ Rời nhóm</button>`;
-      html+=`<button class="option-action" onclick="deleteGroup()">🗑️ Giải tán nhóm</button>`;
-    }else html+=`<button class="option-action" onclick="leaveGroup()">↪ Rời nhóm</button>`;
+      html += optItem(UI_ICONS.crown, 'Chuyển quyền trưởng nhóm', `closeConversationOptions();transferGroupOwner()`);
+      html += optItem(UI_ICONS.logOut, 'Rời nhóm', `leaveGroup()`);
+      html += optItem(UI_ICONS.trash, 'Giải tán nhóm', `deleteGroup()`, true);
+    } else {
+      html += optItem(UI_ICONS.logOut, 'Rời nhóm', `leaveGroup()`, true);
+    }
   }
-  html+=`<button class="option-action" onclick="toggleMuteConversation(${!muted})">${muted?'🔔 Bật thông báo':'🔕 Tắt thông báo'}</button>`;
-  html+=`<button class="option-action" onclick="toggleMsgSearch();closeConversationOptions()">🔎 Tìm kiếm cuộc trò chuyện</button>`;
-  html+=`<button class="option-action" onclick="deleteConversation()">🗑️ Xóa cuộc trò chuyện ở phía tôi</button>`;
+  html += optItem(muted ? UI_ICONS.bell : UI_ICONS.bellOff, muted ? 'Bật thông báo' : 'Tắt thông báo', `toggleMuteConversation(${!muted})`);
+  html += optItem(UI_ICONS.search, 'Tìm kiếm cuộc trò chuyện', `toggleMsgSearch();closeConversationOptions()`);
+  html += optItem(UI_ICONS.trash, 'Xóa cuộc trò chuyện ở phía tôi', `deleteConversation()`, true);
   root.innerHTML=html;$('conversation-options-overlay').classList.add('visible');
 }
 function closeConversationOptions(){$('conversation-options-overlay')?.classList.remove('visible');}
 function toggleBlockUser(username,blocked){wsSend({type:blocked?'unblock_user':'block_user',username});closeConversationOptions();}
 function toggleMuteConversation(muted){wsSend({type:'mute_conversation',conversationId:state.currentConvId,muted});closeConversationOptions();}
 function deleteConversation(){if(!confirm('Xóa đoạn chat chỉ ở phía bạn? Người kia vẫn giữ lịch sử của họ.'))return;wsSend({type:'delete_conversation',conversationId:state.currentConvId});}
-function showGroupMembers(){
-  const g=state.groups.get(state.currentConvId?.replace('group:',''));if(!g)return;
-  alert('Thành viên nhóm:\\n'+(g.members||[]).join('\\n')+'\\n\\nTrưởng nhóm: '+g.createdBy);
+
+// ─── Group Action Modals (Xem thành viên, Thêm nhiều bạn bè, Nhượng quyền, Đổi tên/ảnh nhóm) ──
+function closeGroupActionModal() {
+  $('group-action-modal-overlay')?.classList.remove('visible');
 }
-function addGroupMember(){const username=prompt('Nhập username thành viên cần thêm:');if(username)wsSend({type:'group_add_member',groupId:state.currentConvId.replace('group:',''),username});closeConversationOptions();}
-function transferGroupOwner(){const username=prompt('Nhập username thành viên nhận quyền trưởng nhóm:');if(username&&confirm('Chuyển quyền trưởng nhóm cho '+username+'?'))wsSend({type:'group_transfer_owner',groupId:state.currentConvId.replace('group:',''),username});closeConversationOptions();}
+
+function openGroupActionModal(title, bodyHtml, footerHtml = '') {
+  $('group-action-modal-title').textContent = title;
+  $('group-action-modal-body').innerHTML = bodyHtml;
+  $('group-action-modal-footer').innerHTML = footerHtml || `<button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`;
+  $('group-action-modal-overlay').classList.add('visible');
+}
+
+function showGroupMembers() {
+  const gid = state.currentConvId?.replace('group:', '');
+  const g = state.groups.get(gid);
+  if (!g) return;
+  const isOwner = g.createdBy === state.username;
+  const members = g.members || [];
+
+  const rows = members.map(u => {
+    const isMemberOwner = u === g.createdBy;
+    const isMe = u === state.username;
+    const online = isMe || state.onlineUsers.includes(u);
+    const statusText = isMe ? '● Bạn' : formatPresenceStatus(u, online);
+    return `<div class="group-member-row">
+      <div class="conv-avatar" style="width:38px;height:38px;font-size:14px;overflow:hidden">${userAvatarInner(u)}${online ? '<span class="online-dot"></span>' : ''}</div>
+      <div style="min-width:0;flex:1">
+        <div style="font-size:14px;font-weight:700;color:#172033;display:flex;align-items:center;flex-wrap:wrap">
+          <span>${escHtml(u)}</span>
+          ${isMemberOwner ? '<span class="group-owner-badge">Trưởng nhóm</span>' : ''}
+        </div>
+        <div style="font-size:11px;color:${online ? '#2ecc71' : '#8893a4'};margin-top:2px">${escHtml(statusText)}</div>
+      </div>
+      <div class="group-member-actions">
+        ${!isMe ? `<button class="gm-btn" onclick="closeGroupActionModal();startChat('${escHtml(u)}')">Nhắn tin</button>` : ''}
+        <button class="gm-btn" onclick="closeGroupActionModal();openProfilePage('${escHtml(u)}')">Hồ sơ</button>
+        ${(isOwner && !isMe) ? `<button class="gm-btn danger" onclick="kickGroupMemberFromModal('${escHtml(gid)}','${escHtml(u)}')">Xóa</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  openGroupActionModal(
+    `Thành viên nhóm · ${g.name} (${members.length})`,
+    `<div style="max-height:360px;overflow-y:auto">${rows}</div>`,
+    `<button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`
+  );
+}
+
+function kickGroupMemberFromModal(groupId, targetUsername) {
+  if (!confirm(`Bạn có chắc chắn muốn xóa ${targetUsername} khỏi nhóm không?`)) return;
+  wsSend({ type: 'group_remove_member', groupId, username: targetUsername });
+  closeGroupActionModal();
+}
+
+function addGroupMember() {
+  const gid = state.currentConvId?.replace('group:', '');
+  const g = state.groups.get(gid);
+  if (!g) return;
+  const currentMembers = new Set(g.members || []);
+  const availableFriends = state.friends.filter(f => !currentMembers.has(f.username));
+
+  if (availableFriends.length === 0) {
+    openGroupActionModal(
+      'Thêm thành viên vào nhóm',
+      `<div class="rp-empty">Tất cả bạn bè của bạn đều đã ở trong nhóm này (hoặc bạn chưa kết bạn với người mới).</div>`,
+      `<button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`
+    );
+    return;
+  }
+
+  const itemsHtml = availableFriends.map(f => `
+    <div class="member-item group-add-candidate" data-user="${escHtml(f.username)}" onclick="this.classList.toggle('selected')">
+      <div class="member-chk">✓</div>
+      <div class="member-av" style="overflow:hidden">${userAvatarInner(f.username)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:600">${escHtml(f.username)}</div>
+        <div style="font-size:11px;color:${f.online ? '#2ecc71' : '#8893a4'}">${escHtml(formatPresenceStatus(f.username, f.online))}</div>
+      </div>
+    </div>
+  `).join('');
+
+  openGroupActionModal(
+    `Thêm bạn bè vào nhóm · ${g.name}`,
+    `<input type="text" class="modal-input" placeholder="Tìm bạn bè để thêm..." style="margin-bottom:10px" oninput="filterGroupAddCandidates(this.value)">
+     <div id="group-add-member-list" style="max-height:280px;overflow-y:auto;border:1.5px solid var(--gray-mid);border-radius:8px">${itemsHtml}</div>`,
+    `<button class="btn-cancel" onclick="closeGroupActionModal()">Hủy</button>
+     <button class="btn-primary" onclick="submitAddGroupMembers('${escHtml(gid)}')">Thêm vào nhóm</button>`
+  );
+}
+
+function filterGroupAddCandidates(q) {
+  const clean = (q || '').trim().toLowerCase();
+  document.querySelectorAll('.group-add-candidate').forEach(el => {
+    const u = (el.dataset.user || '').toLowerCase();
+    el.style.display = (!clean || u.includes(clean)) ? 'flex' : 'none';
+  });
+}
+
+function submitAddGroupMembers(groupId) {
+  const selected = [...document.querySelectorAll('.group-add-candidate.selected')].map(el => el.dataset.user);
+  if (selected.length === 0) {
+    showToast('Vui lòng chọn ít nhất một người bạn để thêm.', 'error');
+    return;
+  }
+  wsSend({ type: 'group_add_member', groupId, usernames: selected });
+  closeGroupActionModal();
+}
+
+function transferGroupOwner() {
+  const gid = state.currentConvId?.replace('group:', '');
+  const g = state.groups.get(gid);
+  if (!g) return;
+  const others = (g.members || []).filter(u => u !== state.username);
+  if (others.length === 0) {
+    openGroupActionModal(
+      'Chuyển quyền trưởng nhóm',
+      `<div class="rp-empty">Nhóm chưa có thành viên nào khác để nhượng quyền.</div>`,
+      `<button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`
+    );
+    return;
+  }
+
+  const itemsHtml = others.map((u, idx) => `
+    <label class="group-member-row" style="cursor:pointer">
+      <input type="radio" name="transfer-owner-candidate" value="${escHtml(u)}" ${idx === 0 ? 'checked' : ''} style="accent-color:#0866d6;width:16px;height:16px">
+      <div class="conv-avatar" style="width:36px;height:36px;font-size:13px;overflow:hidden">${userAvatarInner(u)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:600;color:#172033">${escHtml(u)}</div>
+        <div style="font-size:11px;color:#8893a4">${escHtml(formatPresenceStatus(u))}</div>
+      </div>
+    </label>
+  `).join('');
+
+  openGroupActionModal(
+    'Chuyển quyền trưởng nhóm',
+    `<p style="font-size:13px;color:#536176;margin-bottom:10px">Chọn một thành viên trong nhóm để nhận quyền Trưởng nhóm:</p>
+     <div style="max-height:280px;overflow-y:auto;border:1.5px solid var(--gray-mid);border-radius:8px;padding:4px">${itemsHtml}</div>`,
+    `<button class="btn-cancel" onclick="closeGroupActionModal()">Hủy</button>
+     <button class="btn-primary" onclick="confirmTransferGroupOwnerStep('${escHtml(gid)}')">Tiếp tục</button>`
+  );
+}
+
+function confirmTransferGroupOwnerStep(groupId) {
+  const radio = document.querySelector('input[name="transfer-owner-candidate"]:checked');
+  const targetUser = radio?.value;
+  if (!targetUser) {
+    showToast('Vui lòng chọn một thành viên.', 'error');
+    return;
+  }
+  const g = state.groups.get(groupId);
+  // Bước xác nhận thêm 1 lần nữa ngay trên giao diện modal
+  openGroupActionModal(
+    'Xác nhận nhượng quyền trưởng nhóm',
+    `<div style="text-align:center;padding:12px 4px">
+       <div class="conv-avatar" style="width:56px;height:56px;margin:0 auto 12px;font-size:20px;overflow:hidden">${userAvatarInner(targetUser)}</div>
+       <p style="font-size:14px;line-height:1.55;color:#172033">Bạn có chắc chắn muốn nhượng quyền <b>Trưởng nhóm "${escHtml(g?.name || '')}"</b> cho <b>${escHtml(targetUser)}</b> không?</p>
+       <p style="font-size:12px;color:#8893a4;margin-top:6px">Sau khi xác nhận, bạn sẽ trở thành thành viên thường của nhóm.</p>
+     </div>`,
+    `<button class="btn-cancel" onclick="transferGroupOwner()">Quay lại</button>
+     <button class="btn-primary" onclick="executeTransferGroupOwner('${escHtml(groupId)}','${escHtml(targetUser)}')">Xác nhận nhượng quyền</button>`
+  );
+}
+
+function executeTransferGroupOwner(groupId, targetUser) {
+  wsSend({ type: 'group_transfer_owner', groupId, username: targetUser });
+  closeGroupActionModal();
+}
+
+function openGroupEditInfoModal() {
+  const gid = state.currentConvId?.replace('group:', '');
+  const g = state.groups.get(gid);
+  if (!g) return;
+  const avPreview = groupAvatarInner(gid, g.name);
+  openGroupActionModal(
+    'Đổi tên & Ảnh đại diện nhóm',
+    `<div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:6px 0 14px">
+       <div id="group-edit-avatar-preview" class="conv-avatar group" style="width:76px;height:76px;font-size:26px;overflow:hidden">${avPreview}</div>
+       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+         <label class="gm-btn" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+           <span>Chọn ảnh đại diện mới</span>
+           <input type="file" accept="image/*" hidden onchange="uploadGroupAvatarFile('${escHtml(gid)}', this.files[0])">
+         </label>
+         ${g.avatarPath ? `<button type="button" class="gm-btn danger" onclick="clearGroupAvatar('${escHtml(gid)}')">Xóa ảnh nhóm</button>` : ''}
+       </div>
+     </div>
+     <label class="modal-label">Tên nhóm</label>
+     <input id="group-edit-name-input" class="modal-input" type="text" value="${escHtml(g.name || '')}" placeholder="Nhập tên nhóm mới...">`,
+    `<button class="btn-cancel" onclick="closeGroupActionModal()">Hủy</button>
+     <button class="btn-primary" onclick="submitGroupRename('${escHtml(gid)}')">Lưu thay đổi</button>`
+  );
+}
+
+async function uploadGroupAvatarFile(groupId, file) {
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { showToast('Vui lòng chọn tệp ảnh.', 'error'); return; }
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('uploader', state.username);
+  fd.append('target', 'group');
+  fd.append('groupId', groupId);
+  try {
+    const r = await fetch('/api/files/avatar', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Tải ảnh nhóm thất bại');
+    const prev = $('group-edit-avatar-preview');
+    if (prev) prev.innerHTML = `<img src="${escHtml(data.avatarUrl)}" alt="Ảnh nhóm">`;
+    wsSend({ type: 'group_update_info', groupId, avatarPath: data.avatarUrl });
+    showToast('Đã cập nhật ảnh đại diện nhóm!', 'success');
+  } catch (e) {
+    showToast(e.message || 'Lỗi tải ảnh nhóm', 'error');
+  }
+}
+
+function clearGroupAvatar(groupId) {
+  if (!confirm('Xóa ảnh đại diện hiện tại của nhóm?')) return;
+  wsSend({ type: 'group_update_info', groupId, avatarPath: '__CLEAR__' });
+  closeGroupActionModal();
+}
+
+function submitGroupRename(groupId) {
+  const inp = $('group-edit-name-input');
+  const newName = inp ? inp.value.trim() : '';
+  if (!newName) {
+    showToast('Tên nhóm không được để trống.', 'error');
+    return;
+  }
+  const g = state.groups.get(groupId);
+  if (g && newName !== g.name) {
+    wsSend({ type: 'group_update_info', groupId, name: newName });
+  }
+  closeGroupActionModal();
+}
+
 function leaveGroup(){if(!confirm('Bạn muốn rời nhóm?'))return;wsSend({type:'group_leave',groupId:state.currentConvId.replace('group:','')});closeConversationOptions();}
 function deleteGroup(){if(!confirm('Giải tán nhóm? Tất cả thành viên sẽ không thể tiếp tục trò chuyện.'))return;wsSend({type:'group_delete',groupId:state.currentConvId.replace('group:','')});closeConversationOptions();}
 
@@ -1683,14 +2362,38 @@ function openProfilePage(username=state.username){
 function closeProfilePage(){$('profile-modal-overlay')?.classList.remove('visible');}
 function renderProfilePage(msg){
   const p=msg.profile||{username:msg.username,bio:''};const posts=msg.posts||[];const own=msg.username===state.username;
-  if (msg.username) { state.userProfiles.set(msg.username, { ...p, username: msg.username }); state.profileRequests.delete(msg.username); }
+  if (msg.username) {
+    if (p.lastSeen) state.lastSeenMap.set(msg.username, p.lastSeen);
+    state.userProfiles.set(msg.username, { ...p, username: msg.username });
+    state.profileRequests.delete(msg.username);
+  }
   if (state.currentConvId) renderMessages();
   state.currentProfileBio=p.bio||'';
   if(own && dom.userAvatarBtn) dom.userAvatarBtn.innerHTML=p.avatarPath?`<img src="${escHtml(p.avatarPath)}" alt="Ảnh đại diện">`:getInitials(msg.username);
   const avatar=p.avatarPath?`<img class="profile-page-avatar" src="${escHtml(p.avatarPath)}">`:`<div class="profile-page-avatar" style="display:flex;align-items:center;justify-content:center;font-size:32px">${getInitials(msg.username)}</div>`;
-  let html=`<div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 0">${p.coverPath?`<img src="${escHtml(p.coverPath)}" style="width:100%;height:130px;object-fit:cover;border-radius:12px">`:''}${avatar}<h3>${escHtml(msg.username)}</h3><p>${escHtml(p.bio||'Chưa có tiểu sử')}</p>`;
-  if(own)html+=`<button class="btn-primary" onclick="editProfileBio()">Chỉnh sửa tiểu sử</button><label class="btn-cancel" style="cursor:pointer;padding:9px 14px;border-radius:8px">Đổi ảnh đại diện<input type="file" accept="image/*" hidden onchange="uploadProfileAvatar(this.files[0])"></label><label class="btn-cancel" style="cursor:pointer;padding:9px 14px;border-radius:8px">Đổi ảnh bìa<input type="file" accept="image/*" hidden onchange="uploadProfileCover(this.files[0])"></label>`;
-  else { const rel=state.viewedProfile?.username===msg.username?state.viewedProfile.relationship:'stranger'; let relButton=rel==='friend'?`<button class="btn-friend btn-unfriend" onclick="confirmUnfriend('${escHtml(msg.username)}')">Hủy kết bạn</button>`:rel==='pending_sent'?`<button class="btn-friend btn-cancel-req" onclick="cancelFriendRequest('${escHtml(state.viewedProfile?.requestId||'')}','${escHtml(msg.username)}')">Hủy lời mời</button>`:rel==='pending_received'?`<button class="btn-friend btn-accept-req" onclick="acceptFriendRequest('${escHtml(state.viewedProfile?.requestId||'')}','${escHtml(msg.username)}')">Chấp nhận lời mời</button>`:`<button class="btn-friend btn-add-friend" onclick="sendFriendRequest('${escHtml(msg.username)}')">+ Kết bạn</button>`; html+=`<div style="display:flex;gap:8px;flex-wrap:wrap">${relButton}<button class="btn-primary" onclick="startChat('${escHtml(msg.username)}');closeProfilePage()">Nhắn tin</button><button class="btn-cancel" onclick="toggleBlockUser('${escHtml(msg.username)}',${state.blockedUsers.has(msg.username)})">${state.blockedUsers.has(msg.username)?'Gỡ chặn':'Chặn'}</button></div>`; }
+  const isOnline = own || state.onlineUsers.includes(msg.username);
+  const statusStr = own ? '● Đang hoạt động' : formatPresenceStatus(msg.username, isOnline);
+  let html=`<div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 0">${p.coverPath?`<img src="${escHtml(p.coverPath)}" style="width:100%;height:140px;object-fit:cover;border-radius:12px">`:''}${avatar}<h3>${escHtml(msg.username)}</h3><div style="font-size:12px;color:${isOnline?'#2ecc71':'#8893a4'};font-weight:600">${escHtml(statusStr)}</div><p>${escHtml(p.bio||'Chưa có tiểu sử')}</p>`;
+  if(own) {
+    html+=`<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+      <button class="btn-primary" onclick="editProfileBio()">Chỉnh sửa tiểu sử</button>
+      <label class="btn-cancel" style="cursor:pointer;padding:9px 14px;border-radius:8px">Đổi ảnh đại diện<input type="file" accept="image/*" hidden onchange="uploadProfileAvatar(this.files[0])"></label>
+      ${p.avatarPath ? `<button class="btn-cancel" style="padding:9px 12px;border-radius:8px;color:#d93025" onclick="clearProfileAvatar()">Xóa ảnh đại diện</button>` : ''}
+      <label class="btn-cancel" style="cursor:pointer;padding:9px 14px;border-radius:8px">Đổi ảnh bìa<input type="file" accept="image/*" hidden onchange="uploadProfileCover(this.files[0])"></label>
+      ${p.coverPath ? `<button class="btn-cancel" style="padding:9px 12px;border-radius:8px;color:#d93025" onclick="clearProfileCover()">Xóa ảnh bìa</button>` : ''}
+    </div>`;
+  } else {
+    const { rel, requestId } = getRelationshipWith(msg.username);
+    const reqId = requestId || state.viewedProfile?.requestId || '';
+    let relButton = rel==='friend'
+      ? `<button class="btn-friend btn-unfriend" onclick="confirmUnfriend('${escHtml(msg.username)}')">Hủy kết bạn</button>`
+      : rel==='pending_sent'
+        ? `<button class="btn-friend btn-cancel-req" onclick="cancelFriendRequest('${escHtml(reqId)}','${escHtml(msg.username)}')">Hủy lời mời</button>`
+        : rel==='pending_received'
+          ? `<button class="btn-friend btn-accept-req" onclick="acceptFriendRequest('${escHtml(reqId)}','${escHtml(msg.username)}')">Chấp nhận lời mời</button>`
+          : `<button class="btn-friend btn-add-friend" onclick="sendFriendRequest('${escHtml(msg.username)}')">+ Kết bạn</button>`;
+    html+=`<div style="display:flex;gap:8px;flex-wrap:wrap">${relButton}<button class="btn-primary" onclick="startChat('${escHtml(msg.username)}');closeProfilePage()">Nhắn tin</button><button class="btn-cancel" onclick="toggleBlockUser('${escHtml(msg.username)}',${state.blockedUsers.has(msg.username)})">${state.blockedUsers.has(msg.username)?'Gỡ chặn':'Chặn'}</button></div>`;
+  }
   html+='</div>';
   if(own)html+=`<div class="profile-post-compose"><textarea id="new-post-content" placeholder="Bạn đang nghĩ gì?"></textarea><button class="btn-primary" style="margin-top:8px" onclick="createProfilePost()">Đăng bài viết</button></div>`;
   html+='<h3 style="margin:18px 0 4px">Bài viết</h3>';
@@ -1698,14 +2401,44 @@ function renderProfilePage(msg){
   posts.forEach(post=>{html+=`<div class="profile-post"><div style="font-weight:700">${escHtml(post.username)}</div><div style="font-size:11px;color:#8992a3">${formatTime(post.timestamp)}</div><p style="white-space:pre-wrap">${escHtml(post.content)}</p></div>`;});
   $('profile-page-content').innerHTML=html;
 }
-function renderProfileRelationshipActions(){ if(state.profileTarget) wsSend({type:'get_posts',username:state.profileTarget}); }
-async function uploadProfileCover(file){ if(!file)return; const fd=new FormData();fd.append('file',file); try{const r=await fetch('/api/files/avatar',{method:'POST',body:fd});const d=await r.json();if(!r.ok)throw new Error(d.error||'Upload thất bại');wsSend({type:'profile_update',coverPath:d.avatarUrl});wsSend({type:'get_posts',username:state.username});}catch(e){showToast(e.message,'error');}}
+function renderProfileRelationshipActions(){
+  if(state.profileTarget && state.lastPostsPayload?.username === state.profileTarget) {
+    renderProfilePage(state.lastPostsPayload);
+  } else if (state.profileTarget) {
+    wsSend({type:'get_posts',username:state.profileTarget});
+  }
+}
+async function uploadProfileCover(file){
+  if(!file)return;
+  if(!file.type.startsWith('image/')){showToast('Vui lòng chọn tệp ảnh.','error');return;}
+  const fd=new FormData();
+  fd.append('file',file);
+  fd.append('uploader',state.username);
+  fd.append('target','cover');
+  try{
+    const r=await fetch('/api/files/avatar',{method:'POST',body:fd});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Upload ảnh bìa thất bại');
+    const coverPath = d.coverUrl || d.avatarUrl;
+    state.userProfiles.set(state.username,{...(state.userProfiles.get(state.username)||{}),username:state.username,coverPath});
+    wsSend({type:'get_posts',username:state.username});
+    showToast('Đã cập nhật ảnh bìa!','success');
+  }catch(e){showToast(e.message,'error');}
+}
+function clearProfileAvatar(){
+  if(!confirm('Xóa ảnh đại diện hiện tại và quay về mặc định?'))return;
+  wsSend({type:'profile_update',avatarPath:'__CLEAR__'});
+}
+function clearProfileCover(){
+  if(!confirm('Xóa ảnh bìa hiện tại?'))return;
+  wsSend({type:'profile_update',coverPath:'__CLEAR__'});
+}
 function editProfileBio(){const bio=prompt('Nhập tiểu sử:',state.currentProfileBio||'');if(bio!==null)wsSend({type:'profile_update',bio});}
 function createProfilePost(){const el=$('new-post-content');if(!el||!el.value.trim())return;wsSend({type:'create_post',content:el.value.trim()});el.value='';}
 async function uploadProfileAvatar(file){
   if(!file)return;if(!file.type.startsWith('image/')){showToast('Vui lòng chọn tệp ảnh.','error');return;}
-  const fd=new FormData();fd.append('file',file);fd.append('uploader',state.username);
-  try{const r=await fetch('/api/files/avatar',{method:'POST',body:fd});const data=await r.json();if(!r.ok)throw new Error(data.error||'Upload thất bại');const avatarPath=data.avatarUrl;state.userProfiles.set(state.username,{...(state.userProfiles.get(state.username)||{}),username:state.username,avatarPath});if(dom.userAvatarBtn)dom.userAvatarBtn.innerHTML=`<img src="${escHtml(avatarPath)}" alt="Ảnh đại diện">`;if(state.currentConvId)renderMessages();wsSend({type:'profile_update',avatarPath});wsSend({type:'get_posts',username:state.username});}
+  const fd=new FormData();fd.append('file',file);fd.append('uploader',state.username);fd.append('target','avatar');
+  try{const r=await fetch('/api/files/avatar',{method:'POST',body:fd});const data=await r.json();if(!r.ok)throw new Error(data.error||'Upload thất bại');const avatarPath=data.avatarUrl;state.userProfiles.set(state.username,{...(state.userProfiles.get(state.username)||{}),username:state.username,avatarPath});if(dom.userAvatarBtn)dom.userAvatarBtn.innerHTML=`<img src="${escHtml(avatarPath)}" alt="Ảnh đại diện">`;if(state.currentConvId)renderMessages();wsSend({type:'get_posts',username:state.username});showToast('Đã cập nhật ảnh đại diện!','success');}
   catch(e){showToast(e.message,'error');}
 }
 
@@ -1730,10 +2463,10 @@ function closeImageViewer() {
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function showToast(message, type = 'info') {
-  const icons = { info: 'ℹ️', success: '✅', error: '❌' };
+  const icons = { info: UI_ICONS.info, success: UI_ICONS.checkCircle, error: UI_ICONS.xCircle };
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  toast.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ️'}</span><span class="toast-text">${escHtml(message)}</span>`;
+  toast.innerHTML = `<span class="toast-icon">${icons[type]||UI_ICONS.info}</span><span class="toast-text">${escHtml(message)}</span>`;
   dom.toastContainer.appendChild(toast);
   setTimeout(() => { toast.style.opacity='0'; toast.style.transition='opacity .3s'; setTimeout(()=>toast.remove(),300); }, 3500);
 }
@@ -1792,7 +2525,7 @@ function fileTypeIcon(mime, filename) {
     [['ppt','pptx','pps','odp'], '#e8702a', 'P'],
     [['zip','rar','7z','tar','gz'], '#e0a31a', 'ZIP'],
     [['txt','md','log'], '#7b8799', 'TXT'],
-    [['js','ts','py','java','c','cpp','cs','go','rs','php','html','css','json','xml','sql','sh'], '#6e56cf', '</>'],
+    [['js','ts','py','java','c','cpp','cs','go','rs','php','html','css','json','xml','sql','sh','jsx','tsx'], '#6e56cf', '</>'],
   ];
   let color = '#5b6b82', label = (ext && ext.length <= 4 && /^[a-z0-9]+$/.test(ext)) ? ext.toUpperCase() : 'FILE';
   let found = false;
@@ -1809,16 +2542,7 @@ function fileTypeIcon(mime, filename) {
 }
 
 function getFileIcon(mime, filename) {
-  if (!mime) mime = '';
-  if (mime.startsWith('image/')) return '🖼️';
-  if (mime.startsWith('video/')) return '🎬';
-  if (mime.startsWith('audio/')) return '🎵';
-  if (mime.includes('pdf')) return '📄';
-  if (mime.includes('word') || filename?.endsWith('.docx')) return '📝';
-  if (mime.includes('excel') || filename?.endsWith('.xlsx')) return '📊';
-  if (mime.includes('zip') || mime.includes('rar')) return '🗜️';
-  if (mime.includes('text')) return '📃';
-  return '📄';
+  return fileTypeIcon(mime, filename);
 }
 
 function autoResize(el) {
@@ -1842,12 +2566,9 @@ dom.messageInput?.addEventListener('input', () => { autoResize(dom.messageInput)
 dom.attachBtn?.addEventListener('click', () => dom.fileInput.click());
 dom.fileInput?.addEventListener('change', e => { const f = e.target.files[0]; if (f) sendFile(f); });
 
+// Chỉ lọc danh sách đoạn chat/bạn bè hiện có, KHÔNG tìm người lạ chưa kết bạn ở thanh tìm kiếm đoạn chat
 dom.searchInput?.addEventListener('input', () => {
   renderConversationList();
-  clearTimeout(state.searchTimer);
-  const q = dom.searchInput.value.trim();
-  if (q && state.username) state.searchTimer = setTimeout(() => wsSend({ type: 'search_users', query: q }), 250);
-  else state.searchResults = [];
 });
 
 dom.emojiSearch?.addEventListener('input', e => {
@@ -1857,15 +2578,24 @@ dom.emojiSearch?.addEventListener('input', e => {
 
 dom.msgSearchInput?.addEventListener('input', e => {
   clearTimeout(state.msgSearchTimer);
-  state.msgSearchTimer = setTimeout(() => performMsgSearch(e.target.value), 300);
+  state.msgSearchTimer = setTimeout(() => performMsgSearch(e.target.value, true), 200);
+});
+dom.msgSearchInput?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    stepMsgSearch(e.shiftKey ? -1 : 1);
+  }
 });
 
 dom.phoneSearchInput?.addEventListener('keydown', e => { if (e.key === 'Enter') searchByPhone(); });
 
-// Close emoji picker when clicking outside
+// Close emoji picker & avatar popover when clicking outside
 document.addEventListener('click', e => {
   if (!dom.emojiPicker.contains(e.target) && e.target !== $('emoji-btn') && !$('emoji-btn').contains(e.target)) {
     closeEmojiPicker();
+  }
+  if (!e.target.closest('.avatar-action-popover') && !e.target.closest('.clickable-av')) {
+    closeAvatarActionMenu();
   }
 });
 
@@ -1874,7 +2604,9 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.querySelector('.reaction-people-overlay')?.remove();
     document.querySelector('.forward-overlay')?.remove();
+    closeAvatarActionMenu();
     closeGroupModal();
+    closeGroupActionModal();
     closeImageViewer();
     closeAddFriendModal();
     closeFriendReqModal();
@@ -1887,6 +2619,7 @@ document.addEventListener('keydown', e => {
 
 // Modal backdrop close
 $('group-modal-overlay')?.addEventListener('click', e => { if (e.target === $('group-modal-overlay')) closeGroupModal(); });
+$('group-action-modal-overlay')?.addEventListener('click', e => { if (e.target === $('group-action-modal-overlay')) closeGroupActionModal(); });
 $('add-friend-modal-overlay')?.addEventListener('click', e => { if (e.target === $('add-friend-modal-overlay')) closeAddFriendModal(); });
 $('freq-modal-overlay')?.addEventListener('click', e => { if (e.target === $('freq-modal-overlay')) closeFriendReqModal(); });
 
@@ -1894,11 +2627,11 @@ function closeFriendReqModal() { $('freq-modal-overlay')?.classList.remove('visi
 
 // ─── Global expose ────────────────────────────────────────────────────────────
 Object.assign(window, {
-  markFileDownloaded,
+  markFileDownloaded, saveFileWithLocation,
   selectConversation, switchTab, openGroupModal, closeGroupModal, submitCreateGroup,
   logout, openImageViewer, closeImageViewer, showPanel,
   toggleRightPanel, closeRightPanel, switchRpTab,
-  toggleMsgSearch, closeMsgSearch,
+  toggleMsgSearch, closeMsgSearch, stepMsgSearch,
   openAddFriendModal, closeAddFriendModal, searchByPhone,
   sendFriendRequest, acceptFriendRequest, rejectFriendRequest, cancelFriendRequest,
   unfriend, confirmUnfriend, startChat,
@@ -1907,7 +2640,9 @@ Object.assign(window, {
   toggleRecording, stopAndSendRecording, cancelRecording,
   toggleEmojiPicker, closeEmojiPicker,
   reactToMessage,revokeMessage,hideMessageForMe,showReactionPeople,replyToMessage,forwardMessage,filterForwardTargets,sendForwardedMessage,openConversationOptions,closeConversationOptions,
-  openProfilePage,closeProfilePage,editProfileBio,createProfilePost,uploadProfileAvatar,uploadProfileCover,openFriendReqModal,
-  toggleBlockUser,showGroupMembers,addGroupMember,transferGroupOwner,leaveGroup,deleteGroup,
+  openProfilePage,closeProfilePage,editProfileBio,createProfilePost,uploadProfileAvatar,uploadProfileCover,clearProfileAvatar,clearProfileCover,openFriendReqModal,
+  toggleBlockUser,showGroupMembers,addGroupMember,filterGroupAddCandidates,submitAddGroupMembers,transferGroupOwner,confirmTransferGroupOwnerStep,executeTransferGroupOwner,leaveGroup,deleteGroup,
+  openGroupEditInfoModal,uploadGroupAvatarFile,clearGroupAvatar,submitGroupRename,closeGroupActionModal,
+  openAvatarActionMenu,closeAvatarActionMenu,kickGroupMember,kickGroupMemberFromModal,
   deleteConversation,toggleMuteConversation,
 });

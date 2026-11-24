@@ -35,11 +35,40 @@ public class FileController {
     private final Gson gson = new Gson();
 
     // fileId → metadata (in-memory, backed by DB for file shares)
-    private final Map<String, FileMetadata> fileRegistry = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, FileMetadata> fileRegistry = new java.util.concurrent.ConcurrentHashMap<>();
 
     public FileController(ChatWebSocketHandler wsHandler) {
         this.wsHandler = wsHandler;
         try { Files.createDirectories(UPLOAD_DIR); } catch (IOException ignored) { }
+    }
+
+    /** Xóa file vật lý trong thư mục uploads dựa theo fileId hoặc đường dẫn /api/files/{fileId}. */
+    public static void deleteStoredFile(String fileIdOrUrl) {
+        if (fileIdOrUrl == null || fileIdOrUrl.isBlank()) return;
+        String id = fileIdOrUrl.strip();
+        int slash = id.lastIndexOf('/');
+        if (slash >= 0) id = id.substring(slash + 1);
+        int q = id.indexOf('?');
+        if (q >= 0) id = id.substring(0, q);
+        if (id.isBlank()) return;
+
+        FileMetadata removed = fileRegistry.remove(id);
+        if (removed != null && removed.storedName() != null) {
+            try { Files.deleteIfExists(Path.of(removed.storedName())); } catch (IOException ignored) { }
+        }
+        final String targetId = id;
+        if (Files.exists(UPLOAD_DIR)) {
+            try (var paths = Files.walk(UPLOAD_DIR)) {
+                paths.filter(Files::isRegularFile)
+                     .filter(p -> {
+                         String fn = p.getFileName().toString();
+                         return fn.equals(targetId) || fn.startsWith(targetId + ".");
+                     })
+                     .forEach(p -> {
+                         try { Files.deleteIfExists(p); } catch (IOException ignored) { }
+                     });
+            } catch (IOException ignored) { }
+        }
     }
 
     /** Upload file và tuỳ chọn chia sẻ ngay cho người dùng/nhóm. */
@@ -122,10 +151,12 @@ public class FileController {
         ));
     }
 
-    /** Upload ảnh đại diện cho tài khoản đang đăng nhập. */
+    /** Upload ảnh đại diện hoặc ảnh bìa cho tài khoản đang đăng nhập (hoặc ảnh đại diện nhóm). */
     @PostMapping("/avatar")
     public ResponseEntity<?> uploadAvatar(@RequestParam("file") MultipartFile file,
-                                          @RequestParam("uploader") String uploader) {
+                                          @RequestParam("uploader") String uploader,
+                                          @RequestParam(value = "target", required = false, defaultValue = "avatar") String target,
+                                          @RequestParam(value = "groupId", required = false) String groupId) {
         var active = wsHandler.getSessions().get(uploader);
         if (active == null || !active.isOpen())
             return ResponseEntity.status(401).body(Map.of("error", "Bạn chưa đăng nhập."));
@@ -134,19 +165,35 @@ public class FileController {
         String mime = file.getContentType() == null ? "" : file.getContentType();
         if (!mime.startsWith("image/"))
             return ResponseEntity.badRequest().body(Map.of("error", "Chỉ chấp nhận tệp ảnh."));
+        if ("group".equalsIgnoreCase(target) && (groupId == null || groupId.isBlank()
+                || wsHandler.getGroups().get(groupId) == null
+                || !wsHandler.getGroups().get(groupId).hasMember(uploader))) {
+            return ResponseEntity.status(403).body(Map.of("error", "Bạn không có quyền đổi ảnh đại diện nhóm này."));
+        }
         try {
             Path dir = UPLOAD_DIR.resolve("avatars");
             Files.createDirectories(dir);
             String id = UUID.randomUUID().toString();
             String ext = getExtension(sanitizeFilename(file.getOriginalFilename()));
-            Path target = dir.resolve(id + (ext.isEmpty() ? "" : "." + ext));
-            file.transferTo(target);
-            fileRegistry.put(id, new FileMetadata(id, "avatar" + (ext.isEmpty() ? "" : "." + ext),
-                    target.toString(), uploader, mime, humanReadableSize(file.getSize()), file.getSize()));
-            DatabaseManager.getInstance().updateProfile(uploader, "/api/files/" + id, null);
-            return ResponseEntity.ok(Map.of("avatarUrl", "/api/files/" + id));
+            Path dest = dir.resolve(id + (ext.isEmpty() ? "" : "." + ext));
+            file.transferTo(dest);
+            String url = "/api/files/" + id;
+            fileRegistry.put(id, new FileMetadata(id, target + (ext.isEmpty() ? "" : "." + ext),
+                    dest.toString(), uploader, mime, humanReadableSize(file.getSize()), file.getSize()));
+
+            if ("cover".equalsIgnoreCase(target)) {
+                List<String> oldFiles = DatabaseManager.getInstance().updateProfile(uploader, null, url, null);
+                oldFiles.forEach(FileController::deleteStoredFile);
+                return ResponseEntity.ok(Map.of("avatarUrl", url, "coverUrl", url, "target", "cover"));
+            } else if ("group".equalsIgnoreCase(target)) {
+                return ResponseEntity.ok(Map.of("avatarUrl", url, "groupId", groupId, "target", "group"));
+            } else {
+                List<String> oldFiles = DatabaseManager.getInstance().updateProfile(uploader, url, null, null);
+                oldFiles.forEach(FileController::deleteStoredFile);
+                return ResponseEntity.ok(Map.of("avatarUrl", url, "target", "avatar"));
+            }
         } catch (IOException e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "Không thể lưu ảnh đại diện."));
+            return ResponseEntity.internalServerError().body(Map.of("error", "Không thể lưu ảnh."));
         }
     }
 

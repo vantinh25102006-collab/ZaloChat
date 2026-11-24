@@ -109,9 +109,11 @@ public class DatabaseManager {
                     name        TEXT NOT NULL,
                     created_by  TEXT NOT NULL,
                     created_at  TEXT NOT NULL,
-                    folder_path TEXT
+                    folder_path TEXT,
+                    avatar_path TEXT
                 )
             """);
+            try { st.execute("ALTER TABLE groups ADD COLUMN avatar_path TEXT"); } catch (SQLException ignored) { }
 
             // Group members
             st.execute("""
@@ -151,10 +153,11 @@ public class DatabaseManager {
             st.execute("""
                 CREATE TABLE IF NOT EXISTS user_profiles (
                     username TEXT PRIMARY KEY, avatar_path TEXT, cover_path TEXT, bio TEXT,
-                    updated_at TEXT NOT NULL
+                    last_seen TEXT, updated_at TEXT NOT NULL
                 )
             """);
             try { st.execute("ALTER TABLE user_profiles ADD COLUMN cover_path TEXT"); } catch (SQLException ignored) { }
+            try { st.execute("ALTER TABLE user_profiles ADD COLUMN last_seen TEXT"); } catch (SQLException ignored) { }
             st.execute("""
                 CREATE TABLE IF NOT EXISTS user_posts (
                     id TEXT PRIMARY KEY, username TEXT NOT NULL, content TEXT NOT NULL,
@@ -508,7 +511,7 @@ public class DatabaseManager {
 
     public synchronized List<Map<String, Object>> getGroupsForUser(String username) {
         String sql = """
-            SELECT g.id, g.name, g.created_by, g.created_at, g.folder_path,
+            SELECT g.id, g.name, g.created_by, g.created_at, g.folder_path, g.avatar_path,
                    GROUP_CONCAT(gm2.username) as members
             FROM groups g
             JOIN group_members gm ON g.id = gm.group_id AND gm.username = ?
@@ -524,6 +527,7 @@ public class DatabaseManager {
                 g.put("id", rs.getString("id"));
                 g.put("name", rs.getString("name"));
                 g.put("createdBy", rs.getString("created_by"));
+                g.put("avatarPath", rs.getString("avatar_path"));
                 String members = rs.getString("members");
                 g.put("members", members != null ? List.of(members.split(",")) : List.of());
                 g.put("conversationDeleted", isConversationDeletedForUser(username,"group:"+rs.getString("id")));
@@ -533,6 +537,37 @@ public class DatabaseManager {
             System.err.println("[DB] getGroupsForUser error: " + e.getMessage());
         }
         return result;
+    }
+
+    public synchronized String updateGroupInfo(String groupId, String newName, String newAvatarPath) {
+        String oldAvatar = null;
+        try (PreparedStatement sel = conn.prepareStatement("SELECT avatar_path FROM groups WHERE id=?")) {
+            sel.setString(1, groupId);
+            ResultSet rs = sel.executeQuery();
+            if (rs.next()) oldAvatar = rs.getString(1);
+        } catch (SQLException ignored) { }
+
+        if (newName != null && !newName.isBlank()) {
+            try (PreparedStatement ps = conn.prepareStatement("UPDATE groups SET name=? WHERE id=?")) {
+                ps.setString(1, newName.strip());
+                ps.setString(2, groupId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                System.err.println("[DB] updateGroupInfo name error: " + e.getMessage());
+            }
+        }
+        if (newAvatarPath != null) {
+            String valueToSet = "__CLEAR__".equals(newAvatarPath) ? null : newAvatarPath;
+            try (PreparedStatement ps = conn.prepareStatement("UPDATE groups SET avatar_path=? WHERE id=?")) {
+                ps.setString(1, valueToSet);
+                ps.setString(2, groupId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                System.err.println("[DB] updateGroupInfo avatar error: " + e.getMessage());
+            }
+            return (oldAvatar != null && !oldAvatar.equals(valueToSet)) ? oldAvatar : null;
+        }
+        return null;
     }
 
     /** Tạo thư mục cho DM conversation */
@@ -593,14 +628,55 @@ public class DatabaseManager {
         catch(SQLException e){System.err.println("[DB] hideMessageForUser: "+e.getMessage());return false;}
     }
 
+    public record RevokeResult(boolean revoked, String orphanFileId) {}
+
     public synchronized boolean revokeMessage(String messageId, String sender) {
+        return revokeMessage(messageId, sender, false).revoked();
+    }
+
+    public synchronized RevokeResult revokeMessage(String messageId, String actor, boolean forceByGroupOwner) {
+        String oldFileId = null;
+        String actualSender = null;
+        try (PreparedStatement sel = conn.prepareStatement("SELECT sender, file_id FROM messages WHERE id=? AND type<>'revoked'")) {
+            sel.setString(1, messageId);
+            ResultSet rs = sel.executeQuery();
+            if (!rs.next()) return new RevokeResult(false, null);
+            actualSender = rs.getString(1);
+            oldFileId = rs.getString(2);
+        } catch (SQLException e) {
+            System.err.println("[DB] revokeMessage select: " + e.getMessage());
+            return new RevokeResult(false, null);
+        }
+
+        if (!forceByGroupOwner && (actualSender == null || !actualSender.equals(actor))) {
+            return new RevokeResult(false, null);
+        }
+
         try (PreparedStatement ps = conn.prepareStatement(
-                "UPDATE messages SET type='revoked',content='Tin nhắn đã được thu hồi',file_id=NULL,filename=NULL,file_size=NULL,mime_type=NULL WHERE id=? AND sender=? AND type<>'revoked'")) {
-            ps.setString(1,messageId); ps.setString(2,sender);
-            int changed=ps.executeUpdate();
-            if(changed>0)try(PreparedStatement del=conn.prepareStatement("DELETE FROM message_reactions WHERE message_id=?")){del.setString(1,messageId);del.executeUpdate();}
-            return changed>0;
-        } catch(SQLException e){System.err.println("[DB] revokeMessage: "+e.getMessage());return false;}
+                "UPDATE messages SET type='revoked',content='Tin nhắn đã được thu hồi',file_id=NULL,filename=NULL,file_size=NULL,mime_type=NULL WHERE id=? AND type<>'revoked'")) {
+            ps.setString(1, messageId);
+            int changed = ps.executeUpdate();
+            if (changed > 0) {
+                try (PreparedStatement del = conn.prepareStatement("DELETE FROM message_reactions WHERE message_id=?")) {
+                    del.setString(1, messageId);
+                    del.executeUpdate();
+                }
+                String orphanFileId = null;
+                if (oldFileId != null && !oldFileId.isBlank()) {
+                    boolean stillReferenced = false;
+                    try (PreparedStatement refPs = conn.prepareStatement("SELECT 1 FROM messages WHERE file_id=? LIMIT 1")) {
+                        refPs.setString(1, oldFileId);
+                        stillReferenced = refPs.executeQuery().next();
+                    }
+                    if (!stillReferenced) orphanFileId = oldFileId;
+                }
+                return new RevokeResult(true, orphanFileId);
+            }
+            return new RevokeResult(false, null);
+        } catch (SQLException e) {
+            System.err.println("[DB] revokeMessage: " + e.getMessage());
+            return new RevokeResult(false, null);
+        }
     }
 
     public synchronized boolean deleteConversationForUser(String username, String convId) {
@@ -734,18 +810,94 @@ public class DatabaseManager {
     }
 
     public synchronized void updateProfile(String username,String avatarPath,String bio) { updateProfile(username,avatarPath,null,bio); }
-    public synchronized void updateProfile(String username,String avatarPath,String coverPath,String bio) {
+    public synchronized List<String> updateProfile(String username,String avatarPath,String coverPath,String bio) {
+        List<String> oldFilesToDelete = new ArrayList<>();
+        String oldAvatar = null;
+        String oldCover = null;
+        try (PreparedStatement sel = conn.prepareStatement("SELECT avatar_path, cover_path FROM user_profiles WHERE username=?")) {
+            sel.setString(1, username);
+            ResultSet rs = sel.executeQuery();
+            if (rs.next()) {
+                oldAvatar = rs.getString(1);
+                oldCover = rs.getString(2);
+            }
+        } catch (SQLException ignored) { }
+
+        boolean clearAvatar = "__CLEAR__".equals(avatarPath);
+        boolean clearCover = "__CLEAR__".equals(coverPath);
+        String nextAvatar = clearAvatar ? null : (avatarPath != null ? avatarPath : oldAvatar);
+        String nextCover = clearCover ? null : (coverPath != null ? coverPath : oldCover);
+
+        if ((clearAvatar || avatarPath != null) && oldAvatar != null && !oldAvatar.equals(nextAvatar)) {
+            oldFilesToDelete.add(oldAvatar);
+        }
+        if ((clearCover || coverPath != null) && oldCover != null && !oldCover.equals(nextCover)) {
+            oldFilesToDelete.add(oldCover);
+        }
+
         try(PreparedStatement ps=conn.prepareStatement("""
             INSERT INTO user_profiles(username,avatar_path,cover_path,bio,updated_at) VALUES(?,?,?,?,?)
-            ON CONFLICT(username) DO UPDATE SET avatar_path=COALESCE(excluded.avatar_path,user_profiles.avatar_path),
-              cover_path=COALESCE(excluded.cover_path,user_profiles.cover_path), bio=COALESCE(excluded.bio,user_profiles.bio),updated_at=excluded.updated_at
-        """)){ps.setString(1,username);ps.setString(2,avatarPath);ps.setString(3,coverPath);ps.setString(4,bio);ps.setString(5,java.time.Instant.now().toString());ps.executeUpdate();}
+            ON CONFLICT(username) DO UPDATE SET
+              avatar_path=?,
+              cover_path=?,
+              bio=COALESCE(excluded.bio,user_profiles.bio),
+              updated_at=excluded.updated_at
+        """)){
+            String now = java.time.Instant.now().toString();
+            ps.setString(1,username);
+            ps.setString(2,nextAvatar);
+            ps.setString(3,nextCover);
+            ps.setString(4,bio);
+            ps.setString(5,now);
+            ps.setString(6,nextAvatar);
+            ps.setString(7,nextCover);
+            ps.executeUpdate();
+        }
         catch(SQLException e){System.err.println("[DB] updateProfile: "+e.getMessage());}
+        return oldFilesToDelete;
     }
+
+    public synchronized void updateLastSeen(String username, String isoTime) {
+        if (username == null || isoTime == null) return;
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT INTO user_profiles(username, last_seen, updated_at) VALUES(?,?,?)
+            ON CONFLICT(username) DO UPDATE SET last_seen=excluded.last_seen
+        """)) {
+            ps.setString(1, username);
+            ps.setString(2, isoTime);
+            ps.setString(3, isoTime);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            System.err.println("[DB] updateLastSeen: " + e.getMessage());
+        }
+    }
+
+    public synchronized String getLastSeen(String username) {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT last_seen FROM user_profiles WHERE username=?")) {
+            ps.setString(1, username);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getString(1);
+        } catch (SQLException ignored) { }
+        return null;
+    }
+
+    public synchronized Map<String, String> getAllLastSeen() {
+        Map<String, String> map = new HashMap<>();
+        try (PreparedStatement ps = conn.prepareStatement("SELECT username, last_seen FROM user_profiles WHERE last_seen IS NOT NULL")) {
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                String u = rs.getString(1);
+                String t = rs.getString(2);
+                if (u != null && t != null) map.put(u, t);
+            }
+        } catch (SQLException ignored) { }
+        return map;
+    }
+
     public synchronized Map<String,Object> getProfile(String username) {
-        Map<String,Object> m=new LinkedHashMap<>();m.put("username",username);m.put("avatarPath",null);m.put("coverPath",null);m.put("bio","");
-        try(PreparedStatement ps=conn.prepareStatement("SELECT avatar_path,cover_path,bio FROM user_profiles WHERE username=?")){
-            ps.setString(1,username);ResultSet rs=ps.executeQuery();if(rs.next()){m.put("avatarPath",rs.getString(1));m.put("coverPath",rs.getString(2));m.put("bio",rs.getString(3));}
+        Map<String,Object> m=new LinkedHashMap<>();m.put("username",username);m.put("avatarPath",null);m.put("coverPath",null);m.put("bio","");m.put("lastSeen",null);
+        try(PreparedStatement ps=conn.prepareStatement("SELECT avatar_path,cover_path,bio,last_seen FROM user_profiles WHERE username=?")){
+            ps.setString(1,username);ResultSet rs=ps.executeQuery();if(rs.next()){m.put("avatarPath",rs.getString(1));m.put("coverPath",rs.getString(2));m.put("bio",rs.getString(3));m.put("lastSeen",rs.getString(4));}
         }catch(SQLException e){System.err.println("[DB] getProfile: "+e.getMessage());}return m;
     }
     public synchronized String createPost(String username,String content,String imageFileId) {

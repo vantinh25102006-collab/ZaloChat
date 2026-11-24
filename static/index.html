@@ -945,6 +945,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <button class="sidebar-nav-btn active" id="nav-chats" title="Đoạn chat" onclick="showPanel('chats')">
       <!-- Chat bubbles icon -->
       <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span class="badge" id="unread-nav-badge" style="display:none">0</span>
     </button>
     <button class="sidebar-nav-btn" id="nav-contacts" title="Bạn bè" onclick="showPanel('contacts')" style="display:none">
       <!-- Users icon -->
@@ -1023,16 +1024,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             <!-- Paperclip icon -->
             <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           </button>
-          <button class="hdr-btn" id="conversation-options-btn" title="Tùy chọn đoạn chat" onclick="openConversationOptions()">!</button>
+          <button class="hdr-btn" id="conversation-options-btn" title="Tùy chọn đoạn chat" onclick="openConversationOptions()">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          </button>
         </div>
+      </div>
+
+      <!-- Stranger banner -->
+      <div id="stranger-banner" style="display:none;align-items:center;justify-content:space-between;padding:8px 20px;background:#fff8e6;border-bottom:1px solid #ffe4a3;font-size:13px;color:#8a5a00">
+        <span id="stranger-banner-text">Người lạ · Kết bạn để gửi tệp và trò chuyện đầy đủ hơn</span>
+        <div id="stranger-banner-actions"></div>
       </div>
 
       <!-- Inline message search -->
       <div id="msg-search-bar">
         <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:var(--gray-dark);fill:none;flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="msg-search-input" type="text" placeholder="Tìm kiếm trong đoạn chat...">
-        <span id="msg-search-count" style="font-size:12px;color:var(--gray-dark)"></span>
-        <button id="msg-search-close" onclick="closeMsgSearch()">×</button>
+        <input id="msg-search-input" type="text" placeholder="Tìm kiếm trong đoạn chat (Enter: tiếp, Shift+Enter: trước)...">
+        <span id="msg-search-count" style="font-size:12px;color:var(--gray-dark);white-space:nowrap;min-width:74px;text-align:right"></span>
+        <div class="msg-search-nav">
+          <button type="button" class="msg-search-nav-btn" id="msg-search-prev" title="Kết quả trước (Lên)" onclick="stepMsgSearch(-1)">
+            <svg viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>
+          </button>
+          <button type="button" class="msg-search-nav-btn" id="msg-search-next" title="Kết quả tiếp theo (Xuống)" onclick="stepMsgSearch(1)">
+            <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <button id="msg-search-close" title="Đóng tìm kiếm" onclick="closeMsgSearch()">×</button>
       </div>
 
       <!-- Messages -->
@@ -1089,9 +1106,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <button class="rp-close" onclick="closeRightPanel()">×</button>
     </div>
     <div class="rp-tabs">
-      <div class="rp-tab active" onclick="switchRpTab('files')">📁 File</div>
-      <div class="rp-tab" onclick="switchRpTab('images')">🖼️ Ảnh</div>
-      <div class="rp-tab" onclick="switchRpTab('links')">🔗 Link</div>
+      <div class="rp-tab active" onclick="switchRpTab('files')"><span class="rp-tab-ico"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>File</div>
+      <div class="rp-tab" onclick="switchRpTab('images')"><span class="rp-tab-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>Ảnh</div>
+      <div class="rp-tab" onclick="switchRpTab('links')"><span class="rp-tab-ico"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>Link</div>
     </div>
     <div class="rp-content" id="rp-content"></div>
   </div>
@@ -1174,9 +1191,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="modal-body" id="conversation-options-content"></div>
   </div>
 </div>
+<div class="modal-overlay" id="group-action-modal-overlay">
+  <div class="modal-box" id="group-action-modal-box">
+    <div class="modal-hdr"><h2 id="group-action-modal-title">Nhóm</h2><button class="modal-close" onclick="closeGroupActionModal()">×</button></div>
+    <div class="modal-body" id="group-action-modal-body"></div>
+    <div class="modal-footer" id="group-action-modal-footer"></div>
+  </div>
+</div>
 <div id="image-viewer" onclick="if(event.target===this)closeImageViewer()">
   <button id="image-viewer-close" onclick="closeImageViewer()" aria-label="Đóng">×</button>
-  <a id="image-viewer-download" href="#" download="image" title="Tải ảnh">⬇</a>
+  <a id="image-viewer-download" href="#" download="image" title="Tải ảnh">
+    <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+  </a>
   <img id="image-viewer-img" alt="Ảnh phóng to">
   <div id="image-viewer-caption"></div>
 </div>
@@ -1723,6 +1749,67 @@ html,body{width:100%;height:100%;overflow:hidden;background:#eef0f4;color:#17203
 .file-card-btn:hover{background:#edf4ff;border-color:#8dbbff;color:#0866d6}
 .file-card-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .shared-file-ico .ftype{width:34px;height:41px;flex-basis:34px}
+
+/* ── Nâng cấp UI: Icon SVG, Tìm kiếm Highlight, Empty Watermark, Avatar Menu & Group Modals ── */
+.option-action{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:0;border-bottom:1px solid #edf0f5;background:#fff;text-align:left;cursor:pointer;font-size:14px;font-weight:500;color:#1d293b;border-radius:8px;transition:background .15s ease,color .15s ease}
+.option-action:last-child{border-bottom:0}
+.option-action:hover{background:#edf4ff;color:#0866d6}
+.option-action.danger{color:#d93025}
+.option-action.danger:hover{background:#fff1f0;color:#c5221f}
+.option-action .opt-ico{width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:currentColor}
+.option-action .opt-ico svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+.rp-tab{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.rp-tab-ico{display:inline-flex;align-items:center}
+.rp-tab-ico svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.shared-file-dl,.audio-dl{width:30px;height:30px;border-radius:7px;border:1px solid #d5dbe5;background:#fff;color:#2c3a50;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0;transition:all .15s ease;cursor:pointer}
+.shared-file-dl:hover,.audio-dl:hover{background:#edf4ff;border-color:#8dbbff;color:#0866d6}
+.shared-file-dl svg,.audio-dl svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.toast-icon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px}
+.toast-icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.toast.success .toast-icon{color:#1f9d55}
+.toast.error .toast-icon{color:#e53935}
+.toast.info .toast-icon{color:#0866d6}
+
+/* Search navigation & highlights */
+.msg-search-nav{display:inline-flex;align-items:center;gap:4px}
+.msg-search-nav-btn{width:28px;height:28px;border:1px solid #d6deeb;border-radius:6px;background:#fff;color:#4a586e;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all .14s ease}
+.msg-search-nav-btn:hover:not(:disabled){background:#edf4ff;border-color:#8dbbff;color:#0866d6}
+.msg-search-nav-btn:disabled{opacity:.4;cursor:not-allowed}
+.msg-search-nav-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+mark.search-highlight{background:#ffe58f;color:#172033;padding:1px 3px;border-radius:4px;font-weight:600}
+mark.search-highlight.active-match{background:#ff9800;color:#fff;box-shadow:0 0 0 2px rgba(255,152,0,.35)}
+.message-item.search-active-msg .msg-bubble{box-shadow:0 0 0 2.5px #ff9800!important;transition:box-shadow .2s ease}
+
+/* Empty conversation watermark */
+.conv-empty-watermark{flex:1;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;user-select:none;pointer-events:none;padding:32px;margin:auto}
+.conv-empty-watermark-text{font-size:clamp(24px,3.2vw,34px);font-weight:800;color:rgba(105,120,145,.26);letter-spacing:-.4px;line-height:1.35}
+.conv-empty-watermark-sub{font-size:13px;font-weight:500;color:rgba(105,120,145,.42);margin-top:6px}
+
+/* Avatar clickable popover in group chat */
+.message-item .msg-av.clickable-av{cursor:pointer;transition:transform .14s ease,box-shadow .14s ease}
+.message-item .msg-av.clickable-av:hover{transform:scale(1.07);box-shadow:0 0 0 2px #0866d6}
+.avatar-action-popover{position:fixed;z-index:2500;min-width:195px;background:#fff;border:1px solid #dfe5ef;border-radius:11px;box-shadow:0 10px 28px rgba(18,35,65,.18);padding:6px;display:flex;flex-direction:column;gap:2px;animation:fadeUp .12s ease}
+.avatar-popover-head{padding:7px 10px 8px;border-bottom:1px solid #edf0f5;font-size:13px;font-weight:700;color:#172033;display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.avatar-popover-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;background:transparent;border-radius:7px;font-size:13px;font-weight:500;color:#1d293b;cursor:pointer;text-align:left}
+.avatar-popover-item:hover{background:#edf4ff;color:#0866d6}
+.avatar-popover-item.danger{color:#d93025}
+.avatar-popover-item.danger:hover{background:#fff1f0;color:#c5221f}
+.avatar-popover-item svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+
+/* Group member rows in modal */
+.group-member-row{display:flex;align-items:center;gap:11px;padding:9px 10px;border-bottom:1px solid #f1f3f7;border-radius:8px}
+.group-member-row:last-child{border-bottom:0}
+.group-member-row:hover{background:#f8fafd}
+.group-owner-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#b76e00;background:#fff4db;border:1px solid #ffe09e;padding:2px 8px;border-radius:10px;margin-left:6px}
+.group-member-actions{margin-left:auto;display:flex;align-items:center;gap:6px}
+.gm-btn{padding:5px 10px;border-radius:6px;border:1px solid #d7dfec;background:#fff;color:#2c3a50;font-size:12px;font-weight:600;cursor:pointer;transition:all .14s ease}
+.gm-btn:hover{background:#edf4ff;border-color:#8dbbff;color:#0866d6}
+.gm-btn.danger{color:#d93025;border-color:#f5c2c0}
+.gm-btn.danger:hover{background:#fff1f0;border-color:#d93025}
+#tab-unread{padding-right:16px}
 </style>
 </body>
 </html>
