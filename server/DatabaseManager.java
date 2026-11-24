@@ -746,9 +746,54 @@ public class DatabaseManager {
             while(rs.next()){
                 String conv=rs.getString("conv_id"),last=rs.getString("last_time");
                 Map<String,Object> item=new LinkedHashMap<>();item.put("conversationId",conv);item.put("lastTimestamp",last);item.put("muted",rs.getInt("muted") == 1);
-                try(PreparedStatement lastPs=conn.prepareStatement("SELECT sender,content,type,filename FROM messages WHERE conv_id=? AND created_at=? ORDER BY rowid DESC LIMIT 1")){
+                try(PreparedStatement lastPs=conn.prepareStatement("SELECT sender,content,type,filename,mime_type,created_at FROM messages WHERE conv_id=? AND created_at=? ORDER BY rowid DESC LIMIT 1")){
                     lastPs.setString(1,conv);lastPs.setString(2,last);ResultSet lr=lastPs.executeQuery();
-                    if(lr.next()){String c=lr.getString("content");String type=lr.getString("type");item.put("lastMessage",c!=null?c:("file_share".equals(type)?"📎 "+Objects.toString(lr.getString("filename"),"Tệp đính kèm"):""));item.put("lastSender",lr.getString("sender"));}
+                    if(lr.next()){
+                        String sender = lr.getString("sender");
+                        String c = lr.getString("content");
+                        String type = lr.getString("type");
+                        String mime = Objects.toString(lr.getString("mime_type"), "");
+                        boolean isGroup = conv.startsWith("group:");
+                        String prefix = isGroup && sender != null && !"SYSTEM".equals(sender) ? (sender + ": ") : "";
+                        String preview;
+                        if ("system".equalsIgnoreCase(type) || "SYSTEM".equals(sender)) {
+                            preview = Objects.toString(c, "");
+                        } else if ("revoked".equalsIgnoreCase(type)) {
+                            preview = isGroup ? (prefix + "đã thu hồi 1 tin nhắn.") : "Tin nhắn đã được thu hồi";
+                        } else if ("file_share".equalsIgnoreCase(type)) {
+                            if (mime.startsWith("image/")) {
+                                int imgCount = 1;
+                                try (PreparedStatement recentPs = conn.prepareStatement(
+                                        "SELECT sender, type, mime_type FROM messages WHERE conv_id=? ORDER BY created_at DESC, rowid DESC LIMIT 20")) {
+                                    recentPs.setString(1, conv);
+                                    ResultSet rr = recentPs.executeQuery();
+                                    int streak = 0;
+                                    while (rr.next()) {
+                                        String rsSender = rr.getString(1);
+                                        String rsType = rr.getString(2);
+                                        String rsMime = Objects.toString(rr.getString(3), "");
+                                        if (Objects.equals(sender, rsSender) && "file_share".equalsIgnoreCase(rsType) && rsMime.startsWith("image/")) {
+                                            streak++;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    if (streak > 0) imgCount = streak;
+                                } catch (SQLException ignored) { }
+                                preview = prefix + "đã gửi " + imgCount + " ảnh.";
+                            } else if (mime.startsWith("video/")) {
+                                preview = prefix + "đã gửi 1 video.";
+                            } else if (mime.startsWith("audio/")) {
+                                preview = prefix + "đã gửi 1 tệp âm thanh.";
+                            } else {
+                                preview = prefix + "đã gửi 1 file.";
+                            }
+                        } else {
+                            preview = prefix + Objects.toString(c, "");
+                        }
+                        item.put("lastMessage", preview);
+                        item.put("lastSender", sender);
+                    }
                 }
                 try(PreparedStatement unreadPs=conn.prepareStatement("""
                     SELECT COUNT(*) FROM messages m WHERE m.conv_id=? AND m.sender<>?

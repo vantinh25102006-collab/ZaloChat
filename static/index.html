@@ -1074,7 +1074,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
             <button class="inp-btn" id="attach-btn" title="Đính kèm file">
               <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
             </button>
-            <input type="file" id="file-input">
+            <input type="file" id="file-input" multiple>
             <button class="inp-btn" id="emoji-btn" title="Emoji" onclick="toggleEmojiPicker()">
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
             </button>
@@ -1107,7 +1107,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
     <div class="rp-tabs">
       <div class="rp-tab active" onclick="switchRpTab('files')"><span class="rp-tab-ico"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>File</div>
-      <div class="rp-tab" onclick="switchRpTab('images')"><span class="rp-tab-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>Ảnh</div>
+      <div class="rp-tab" onclick="switchRpTab('images')"><span class="rp-tab-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>Ảnh và video</div>
       <div class="rp-tab" onclick="switchRpTab('links')"><span class="rp-tab-ico"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>Link</div>
     </div>
     <div class="rp-content" id="rp-content"></div>
@@ -1799,7 +1799,11 @@ mark.search-highlight.active-match{background:#ff9800;color:#fff;box-shadow:0 0 
 .avatar-popover-item.danger:hover{background:#fff1f0;color:#c5221f}
 .avatar-popover-item svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 
-/* Group member rows in modal */
+/* Group member rows in modal & Golden owner key badge */
+.message-item .msg-av{position:relative!important;overflow:visible!important}
+.message-item .msg-av>img,.conv-avatar>img{width:100%;height:100%;object-fit:cover;border-radius:50%!important;display:block}
+.owner-key-badge{position:absolute;right:-3px;bottom:-3px;width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,#ffd54f 0%,#f59e0b 100%);color:#fff;border:1.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.28);display:inline-flex;align-items:center;justify-content:center;z-index:4;pointer-events:none}
+.owner-key-badge svg{width:10px;height:10px;fill:none;stroke:#fff;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 1px rgba(120,60,0,.35))}
 .group-member-row{display:flex;align-items:center;gap:11px;padding:9px 10px;border-bottom:1px solid #f1f3f7;border-radius:8px}
 .group-member-row:last-child{border-bottom:0}
 .group-member-row:hover{background:#f8fafd}
@@ -1810,6 +1814,12 @@ mark.search-highlight.active-match{background:#ff9800;color:#fff;box-shadow:0 0 
 .gm-btn.danger{color:#d93025;border-color:#f5c2c0}
 .gm-btn.danger:hover{background:#fff1f0;border-color:#d93025}
 #tab-unread{padding-right:16px}
+.shared-media-item{position:relative;width:100%;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#0f172a;cursor:pointer}
+.shared-media-item img,.shared-media-item video{width:100%;height:100%;object-fit:cover;display:block}
+.shared-video-badge{position:absolute;inset:0;background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;color:#fff;transition:background .15s ease}
+.shared-media-item:hover .shared-video-badge{background:rgba(0,0,0,.42)}
+.shared-video-badge span{width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.62);border:1.5px solid rgba(255,255,255,.85);display:inline-flex;align-items:center;justify-content:center}
+.shared-video-badge svg{width:15px;height:15px;fill:#fff;stroke:none;margin-left:2px}
 </style>
 </body>
 </html>

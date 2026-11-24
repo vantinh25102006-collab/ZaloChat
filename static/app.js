@@ -79,7 +79,10 @@ const UI_ICONS = {
   info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
   checkCircle: '<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
   xCircle: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+  keyGold: '<svg viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2"/><path d="M17 6l3 3"/><path d="M14 9l2.5 2.5"/></svg>',
 };
+
+const OWNER_KEY_BADGE_HTML = `<span class="owner-key-badge" title="Trưởng nhóm">${UI_ICONS.keyGold}</span>`;
 
 // ─── DOM ──────────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -496,6 +499,44 @@ function onSystemMessage(msg) {
   // System messages ignored (no global room)
 }
 
+function computeLastMessagePreview(conv) {
+  if (!conv || !conv.messages || conv.messages.length === 0) return '';
+  const msgs = conv.messages;
+  const last = msgs[msgs.length - 1];
+  const isGroup = conv.type === 'group';
+  const sender = last.from || last.username || '';
+  const isSys = last.type === 'system' || last.messageType === 'system' || sender === 'SYSTEM';
+  if (isSys) return last.content || '';
+  const prefix = (isGroup && sender) ? `${sender}: ` : '';
+
+  const t = typeof last.type === 'string' ? last.type.toLowerCase() : '';
+  if (t === 'revoked') {
+    return isGroup ? `${prefix}đã thu hồi 1 tin nhắn.` : 'Tin nhắn đã được thu hồi';
+  }
+  const mime = last.mimeType || '';
+  if (t === 'file_share' || last.fileId) {
+    if (mime.startsWith('image/')) {
+      let imgCount = 0;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i];
+        const mSender = m.from || m.username || '';
+        const mMime = m.mimeType || '';
+        const mType = typeof m.type === 'string' ? m.type.toLowerCase() : '';
+        if (mSender === sender && (mType === 'file_share' || m.fileId) && mMime.startsWith('image/')) {
+          imgCount++;
+        } else {
+          break;
+        }
+      }
+      return `${prefix}đã gửi ${Math.max(1, imgCount)} ảnh.`;
+    }
+    if (mime.startsWith('video/')) return `${prefix}đã gửi 1 video.`;
+    if (mime.startsWith('audio/')) return `${prefix}đã gửi 1 tệp âm thanh.`;
+    return `${prefix}đã gửi 1 file.`;
+  }
+  return `${prefix}${last.content || ''}`;
+}
+
 function onHistory(msg) {
   if (!msg.conversationId || !msg.messages) return;
   const conv = state.conversations.get(msg.conversationId);
@@ -507,13 +548,12 @@ function onHistory(msg) {
     timestamp: item.timestamp || new Date().toISOString(),
     reactions: item.reactions || [],
   }));
-  conv.lastMsg = conv.messages.length
-    ? (conv.messages[conv.messages.length - 1].content || `📄 ${conv.messages[conv.messages.length - 1].filename || ''}`)
-    : '';
+  conv.lastMsg = computeLastMessagePreview(conv);
   if (state.currentConvId === msg.conversationId) {
     renderMessages();
     if (state.rightPanelOpen) renderRightPanel();
   }
+  renderConversationList();
 }
 
 function onTyping(msg) {
@@ -682,16 +722,21 @@ function onMessageRevoked(msg) {
   target.type = 'revoked'; target.content = 'Tin nhắn đã được thu hồi';
   target.fileId = null; target.filename = null; target.mimeType = null;
   target.reactions = [];
-  if (state.currentConvId === msg.conversationId) renderMessages();
-  if (conv.messages[conv.messages.length-1]?.messageId === msg.messageId) conv.lastMsg = 'Tin nhắn đã được thu hồi';
+  if (state.currentConvId === msg.conversationId) {
+    renderMessages();
+    if (state.rightPanelOpen) renderRightPanel();
+  }
+  conv.lastMsg = computeLastMessagePreview(conv);
   renderConversationList();
 }
 function onMessageHidden(msg) {
   const conv=state.conversations.get(msg.conversationId);if(!conv)return;
   conv.messages=conv.messages.filter(m=>m.messageId!==msg.messageId);
-  const last=conv.messages[conv.messages.length-1];
-  conv.lastMsg=last?(last.content||last.filename||''):'Chưa có tin nhắn';
-  if(state.currentConvId===msg.conversationId)renderMessages();
+  conv.lastMsg = computeLastMessagePreview(conv) || 'Chưa có tin nhắn';
+  if(state.currentConvId===msg.conversationId) {
+    renderMessages();
+    if (state.rightPanelOpen) renderRightPanel();
+  }
   renderConversationList();
 }
 function onConversationDeleted(msg) {
@@ -809,7 +854,7 @@ function pushMessage(convId, msg) {
   };
   if (msgObj.messageId && conv.messages.some(m => m.messageId === msgObj.messageId)) return;
   conv.messages.push(msgObj);
-  conv.lastMsg = msgObj.content || (msgObj.mimeType?.startsWith('image/') ? '[Hình ảnh]' : msgObj.mimeType?.startsWith('video/') ? '[Video]' : (msgObj.filename ? `[Tệp] ${msgObj.filename}` : ''));
+  conv.lastMsg = computeLastMessagePreview(conv);
   conv.lastTime = formatTime(msgObj.timestamp);
   conv.lastTimestamp = msgObj.timestamp;
   if (state.currentConvId === convId) {
@@ -998,14 +1043,15 @@ function requestUserProfile(username, force = false) {
   wsSend({ type: 'get_posts', username });
 }
 
-function avatarMarkup(username, className = 'msg-av', clickableInGroup = false) {
+function avatarMarkup(username, className = 'msg-av', clickableInGroup = false, isGroupLeader = false) {
   const profile = state.userProfiles.get(username);
   const avatarPath = profile?.avatarPath;
   const extraClass = clickableInGroup ? ' clickable-av' : '';
   const clickAttr = clickableInGroup ? ` onclick="openAvatarActionMenu(event, '${escHtml(username || '')}')"` : '';
+  const keyBadge = isGroupLeader ? OWNER_KEY_BADGE_HTML : '';
   return avatarPath
-    ? `<div class="${className}${extraClass}" title="${escHtml(username || '')}"${clickAttr}><img src="${escHtml(avatarPath)}" alt="Ảnh đại diện ${escHtml(username || '')}"></div>`
-    : `<div class="${className}${extraClass}" title="${escHtml(username || '')}"${clickAttr}>${getInitials(username || '?')}</div>`;
+    ? `<div class="${className}${extraClass}" title="${escHtml(username || '')}${isGroupLeader ? ' (Trưởng nhóm)' : ''}"${clickAttr}><img src="${escHtml(avatarPath)}" alt="Ảnh đại diện ${escHtml(username || '')}">${keyBadge}</div>`
+    : `<div class="${className}${extraClass}" title="${escHtml(username || '')}${isGroupLeader ? ' (Trưởng nhóm)' : ''}"${clickAttr}>${getInitials(username || '?')}${keyBadge}</div>`;
 }
 
 function groupAvatarInner(groupId, groupName) {
@@ -1173,9 +1219,10 @@ function appendMessageDOM(msg, grouped=false) {
   const time=formatTime(msg.timestamp);
   const replyCard=msg.replyToId?`<div class="message-reply-context"><b>${escHtml(msg.replyToUsername||'')}</b><span>${escHtml(msg.replyToContent||'Tin nhắn được trả lời')}</span></div>`:'';
   const bodyHtml=`<div class="msg-body">${showSender&&!senderInCard?`<div class="msg-sender">${escHtml(msg.from||'')}</div>`:''}${replyCard}${bubbleContent}<div class="msg-time">${time}</div></div>`;
-  // Avatar nằm cùng hàng với bong bóng; trong nhóm có thể bấm vào avatar người khác để mở combobox thao tác.
+  // Avatar nằm cùng hàng với bong bóng; trong nhóm có thể bấm vào avatar người khác để mở combobox thao tác, và hiện chìa khóa vàng nếu người nhắn là trưởng nhóm.
   const clickableAvatar = inGroup && !isMine && Boolean(msg.from);
-  const senderAvatar = grouped ? '<div class="msg-av-spacer" aria-hidden="true"></div>' : avatarMarkup(msg.from || '?', 'msg-av', clickableAvatar);
+  const isSenderGroupOwner = Boolean(inGroup && groupObj && msg.from && groupObj.createdBy === msg.from);
+  const senderAvatar = grouped ? '<div class="msg-av-spacer" aria-hidden="true"></div>' : avatarMarkup(msg.from || '?', 'msg-av', clickableAvatar, isSenderGroupOwner);
   wrapper.innerHTML = `${senderAvatar}${bodyHtml}`;
   if(msgType==='revoked'){
     const body=wrapper.querySelector('.msg-body');
@@ -1813,14 +1860,24 @@ function renderRightPanel() {
   const tab = state.activeRpTab;
 
   if (tab === 'images') {
-    const images = msgs.filter(m => (m.mimeType || '').startsWith('image/') && m.fileId);
-    if (!images.length) { dom.rpContent.innerHTML = '<div class="rp-empty">Chưa có ảnh nào</div>'; return; }
-    dom.rpContent.innerHTML = `<div class="shared-img-grid">${images.map(m => {
+    const mediaList = msgs.filter(m => m.fileId && ((m.mimeType || '').startsWith('image/') || (m.mimeType || '').startsWith('video/')));
+    if (!mediaList.length) { dom.rpContent.innerHTML = '<div class="rp-empty">Chưa có ảnh hoặc video nào</div>'; return; }
+    dom.rpContent.innerHTML = `<div class="shared-img-grid">${mediaList.slice().reverse().map(m => {
       const url = `/api/files/${encodeURIComponent(m.fileId)}`;
-      return `<img class="shared-img-thumb" src="${url}" alt="${escHtml(m.filename||'')}" onclick="openImageViewer('${url}','${escHtml(m.filename||'')}')">`;
+      const isVideo = (m.mimeType || '').startsWith('video/');
+      const titleInfo = `${m.filename || (isVideo ? 'Video' : 'Ảnh')} · Người gửi: ${m.from || m.username || ''} · ${formatDateTimeFull(m.timestamp)}`;
+      if (isVideo) {
+        return `<div class="shared-media-item" title="${escHtml(titleInfo)}" onclick="openVideoViewer('${url}','${escHtml(m.filename||'video.mp4')}')">
+          <video src="${url}#t=0.1" preload="metadata" muted playsinline></video>
+          <div class="shared-video-badge"><span><svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg></span></div>
+        </div>`;
+      }
+      return `<div class="shared-media-item" title="${escHtml(titleInfo)}" onclick="openImageViewer('${url}','${escHtml(m.filename||'')}')">
+        <img class="shared-img-thumb" src="${url}" alt="${escHtml(m.filename||'')}" loading="lazy">
+      </div>`;
     }).join('')}</div>`;
   } else if (tab === 'files') {
-    const files = msgs.filter(m => m.fileId && !(m.mimeType || '').startsWith('image/') && !(m.mimeType || '').startsWith('audio/'));
+    const files = msgs.filter(m => m.fileId && !(m.mimeType || '').startsWith('image/') && !(m.mimeType || '').startsWith('video/') && !(m.mimeType || '').startsWith('audio/'));
     const audios = msgs.filter(m => m.fileId && (m.mimeType || '').startsWith('audio/'));
     let html = '';
     if (audios.length) {
@@ -2140,7 +2197,7 @@ function showGroupMembers() {
     const online = isMe || state.onlineUsers.includes(u);
     const statusText = isMe ? '● Bạn' : formatPresenceStatus(u, online);
     return `<div class="group-member-row">
-      <div class="conv-avatar" style="width:38px;height:38px;font-size:14px;overflow:hidden">${userAvatarInner(u)}${online ? '<span class="online-dot"></span>' : ''}</div>
+      <div class="conv-avatar" style="width:38px;height:38px;font-size:14px;overflow:visible;position:relative">${userAvatarInner(u)}${isMemberOwner ? OWNER_KEY_BADGE_HTML : (online ? '<span class="online-dot"></span>' : '')}</div>
       <div style="min-width:0;flex:1">
         <div style="font-size:14px;font-weight:700;color:#172033;display:flex;align-items:center;flex-wrap:wrap">
           <span>${escHtml(u)}</span>
@@ -2447,17 +2504,48 @@ function openImageViewer(url, filename = '') {
   const img = $('image-viewer-img');
   const cap = $('image-viewer-caption');
   if (!overlay || !img) return;
+  const oldVid = $('image-viewer-video');
+  if (oldVid) { oldVid.pause(); oldVid.remove(); }
+  img.style.display = 'block';
   img.src = url;
   const dl = $('image-viewer-download');
   if (dl) { dl.href = url; dl.download = filename || 'image'; }
-  if (cap) cap.textContent = '';
+  if (cap) cap.textContent = filename || '';
   overlay.classList.add('visible');
   document.body.style.overflow = 'hidden';
 }
+
+function openVideoViewer(url, filename = 'video.mp4') {
+  const overlay = $('image-viewer');
+  const img = $('image-viewer-img');
+  const cap = $('image-viewer-caption');
+  if (!overlay || !img) return;
+  img.style.display = 'none';
+  img.src = '';
+  let vid = $('image-viewer-video');
+  if (!vid) {
+    vid = document.createElement('video');
+    vid.id = 'image-viewer-video';
+    vid.controls = true;
+    vid.autoplay = true;
+    vid.playsInline = true;
+    vid.style.cssText = 'max-width:min(94vw,1200px);max-height:80vh;border-radius:10px;background:#000;box-shadow:0 12px 50px rgba(0,0,0,.5)';
+    img.insertAdjacentElement('afterend', vid);
+  }
+  vid.src = url;
+  const dl = $('image-viewer-download');
+  if (dl) { dl.href = url; dl.download = filename || 'video.mp4'; }
+  if (cap) cap.textContent = filename || '';
+  overlay.classList.add('visible');
+  document.body.style.overflow = 'hidden';
+}
+
 function closeImageViewer() {
   $('image-viewer')?.classList.remove('visible');
   const img = $('image-viewer-img');
-  if (img) img.src = '';
+  if (img) { img.src = ''; img.style.display = 'block'; }
+  const vid = $('image-viewer-video');
+  if (vid) { vid.pause(); vid.remove(); }
   document.body.style.overflow = '';
 }
 
@@ -2564,7 +2652,12 @@ dom.messageInput?.addEventListener('keydown', e => {
 dom.messageInput?.addEventListener('input', () => { autoResize(dom.messageInput); handleTypingInput(); });
 
 dom.attachBtn?.addEventListener('click', () => dom.fileInput.click());
-dom.fileInput?.addEventListener('change', e => { const f = e.target.files[0]; if (f) sendFile(f); });
+dom.fileInput?.addEventListener('change', async e => {
+  const files = [...(e.target.files || [])];
+  for (const f of files) {
+    await sendFile(f);
+  }
+});
 
 // Chỉ lọc danh sách đoạn chat/bạn bè hiện có, KHÔNG tìm người lạ chưa kết bạn ở thanh tìm kiếm đoạn chat
 dom.searchInput?.addEventListener('input', () => {
@@ -2629,7 +2722,7 @@ function closeFriendReqModal() { $('freq-modal-overlay')?.classList.remove('visi
 Object.assign(window, {
   markFileDownloaded, saveFileWithLocation,
   selectConversation, switchTab, openGroupModal, closeGroupModal, submitCreateGroup,
-  logout, openImageViewer, closeImageViewer, showPanel,
+  logout, openImageViewer, openVideoViewer, closeImageViewer, showPanel,
   toggleRightPanel, closeRightPanel, switchRpTab,
   toggleMsgSearch, closeMsgSearch, stepMsgSearch,
   openAddFriendModal, closeAddFriendModal, searchByPhone,
