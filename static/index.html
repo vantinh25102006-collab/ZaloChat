@@ -3454,14 +3454,6 @@
                 <line x1="15" y1="3" x2="15" y2="21" />
               </svg>
             </button>
-            <button class="hdr-btn" id="conversation-options-btn" title="Tùy chọn đoạn chat"
-              onclick="openConversationOptions()">
-              <svg viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="1" />
-                <circle cx="19" cy="12" r="1" />
-                <circle cx="5" cy="12" r="1" />
-              </svg>
-            </button>
           </div>
         </div>
 
@@ -3558,6 +3550,8 @@
               </button>
             </div>
             <div class="input-row">
+              <span id="reply-mention-chip" class="zalo-reply-mention" style="display:none" title="Bấm để bỏ @nhắc tên"
+                onclick="clearReplyMention()"></span>
               <textarea id="message-input" rows="1" placeholder="Nhập @, tin nhắn..."></textarea>
               <button id="inline-emoji-btn" class="inp-btn" type="button" title="Biểu cảm"
                 onclick="toggleEmojiPicker()">
@@ -3576,6 +3570,7 @@
               </button>
             </div>
           </div>
+          <div id="mention-suggest-box" class="zalo-mention-box" style="display:none"></div>
           <!-- Emoji Picker -->
           <div id="emoji-picker">
             <input type="text" class="emoji-search" id="emoji-search" placeholder="Tìm emoji...">
@@ -3668,7 +3663,12 @@
       <div class="modal-body" style="padding:16px 20px">
         <div class="zalo-phone-underline-row">
           <div class="zalo-phone-prefix">
-            <span style="font-size:16px">🇻🇳</span>
+            <svg viewBox="0 0 24 16" width="22" height="15" aria-hidden="true"
+              style="border-radius:2px;box-shadow:0 0 1px rgba(0,0,0,.25);flex-shrink:0">
+              <rect width="24" height="16" fill="#da251d" />
+              <polygon points="12,3 13.3,6.9 17.4,6.9 14.1,9.3 15.3,13.2 12,10.8 8.7,13.2 9.9,9.3 6.6,6.9 10.7,6.9"
+                fill="#ffeb00" />
+            </svg>
             <span>(+84)</span>
           </div>
           <input id="phone-search-input" type="tel" inputmode="numeric" placeholder="Số điện thoại"
@@ -3756,7 +3756,7 @@
 ══════════════════════════════════════════════════════════ -->
   <div id="toast-container"></div>
 
-  <script src="app.js?v=20261126a"></script>
+  <script src="app.js?v=20261126d"></script>
 
   <style>
     /* Avatar ảnh thật trong từng nhóm tin nhắn */
@@ -6482,13 +6482,16 @@
     .rp-quick-actions {
       display: flex;
       justify-content: center;
-      gap: 14px;
-      margin-top: 6px;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 0 4px;
       width: 100%
     }
 
     .rp-qa-btn {
       display: flex;
+      flex: 1;
+      min-width: 0;
       flex-direction: column;
       align-items: center;
       gap: 5px;
@@ -6498,7 +6501,9 @@
       color: #4a586e;
       font-size: 11px;
       font-weight: 500;
-      max-width: 74px
+      line-height: 1.25;
+      text-align: center;
+      max-width: 76px
     }
 
     .rp-qa-btn .rp-qa-ico {
@@ -7311,10 +7316,6 @@
     @media(max-width:640px) {
       #contacts-mobile-back {
         display: inline-flex !important
-      }
-
-      #chat-screen.mobile-chat-open #contacts-main-view {
-        display: flex !important
       }
     }
 
@@ -8365,6 +8366,450 @@
 
     .msg-jump-flash .msg-bubble {
       box-shadow: 0 0 0 2px #0068ff !important
+    }
+
+    /* Đảm bảo mọi avatar img trong popover, profile card, user sidebar đều co giãn đúng khung tròn */
+    .avatar-action-popover {
+      max-width: 245px
+    }
+
+    .avatar-popover-head img {
+      width: 28px !important;
+      height: 28px !important;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+      display: block
+    }
+
+    .avatar-popover-head span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .profile-avatar img,
+    .forward-target-avatar img,
+    .user-avatar-btn img {
+      width: 100% !important;
+      height: 100% !important;
+      border-radius: 50%;
+      object-fit: cover;
+      display: block
+    }
+
+    #messages-container.multi-select-active .msg-actions,
+    #messages-container.multi-select-active .message-reaction-area {
+      display: none !important
+    }
+
+    /* Zalo Reply Preview (nằm dưới toolbar), Mention Tag & Forward Modal */
+    .reply-preview {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: #f1f3f5 !important;
+      border: 0 !important;
+      border-left: 0 !important;
+      border-radius: 6px !important;
+      padding: 8px 10px 8px 12px !important;
+      margin: 6px 0 4px !important;
+      color: #52627a;
+      font-size: 13px
+    }
+
+    .reply-preview-body {
+      border-left: 2.5px solid #0068ff;
+      padding-left: 10px;
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px
+    }
+
+    .reply-preview-top {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12.5px;
+      color: #52627a;
+      line-height: 1.3
+    }
+
+    .reply-preview-top b {
+      color: #081c36;
+      font-weight: 700
+    }
+
+    .reply-preview-top svg {
+      width: 12px;
+      height: 12px;
+      fill: currentColor;
+      stroke: none;
+      flex-shrink: 0
+    }
+
+    .reply-preview-txt {
+      font-size: 12.5px;
+      color: #52627a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .reply-preview-thumb {
+      width: 34px;
+      height: 34px;
+      border-radius: 4px;
+      object-fit: cover;
+      flex-shrink: 0
+    }
+
+    .reply-preview-close {
+      width: 24px;
+      height: 24px;
+      border: 0;
+      background: transparent;
+      border-radius: 50%;
+      color: #52627a;
+      font-size: 18px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0
+    }
+
+    .reply-preview-close:hover {
+      background: #e3e6ea;
+      color: #081c36
+    }
+
+    .zalo-reply-mention {
+      display: inline-flex;
+      align-items: center;
+      color: #0068ff;
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+      flex-shrink: 0;
+      cursor: pointer;
+      padding: 2px 0;
+      user-select: none
+    }
+
+    .zalo-reply-mention:hover {
+      text-decoration: line-through
+    }
+
+    .msg-mention {
+      color: #0068ff;
+      font-weight: 500
+    }
+
+    .zalo-mention-box {
+      position: absolute;
+      left: 16px;
+      bottom: calc(100% + 4px);
+      width: 250px;
+      max-height: 210px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #e1e5ec;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(15, 30, 55, .18);
+      padding: 4px 0;
+      z-index: 2500
+    }
+
+    .zalo-mention-opt {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 12px;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+      color: #081c36;
+      text-align: left
+    }
+
+    .zalo-mention-opt:hover {
+      background: #f2f5fa
+    }
+
+    /* Trích dẫn nằm gọn bên trong bong bóng giống Zalo */
+    .message-reply-context {
+      background: rgba(0, 104, 255, .07) !important;
+      border-left: 2.5px solid #0068ff !important;
+      border-radius: 6px !important;
+      padding: 6px 9px !important;
+      margin: 0 0 6px !important;
+      cursor: pointer;
+      transition: background .12s
+    }
+
+    .message-reply-context:hover {
+      background: rgba(0, 104, 255, .13) !important
+    }
+
+    .message-item.theirs .message-reply-context {
+      background: #f3f5f8 !important
+    }
+
+    .message-reply-context b {
+      font-size: 12px;
+      color: #081c36;
+      display: block;
+      margin-bottom: 1px
+    }
+
+    .message-reply-context span {
+      font-size: 12px;
+      color: #52627a;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 340px
+    }
+
+    .zalo-forward-preview {
+      margin: 8px 14px 4px;
+      padding: 8px 10px;
+      background: #f5f7fa;
+      border-left: 2.5px solid #0068ff;
+      border-radius: 6px;
+      font-size: 12.5px;
+      color: #52627a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .zalo-forward-note {
+      margin: 4px 14px 6px;
+      padding: 9px 12px;
+      border: 1px solid #dce3ed;
+      border-radius: 8px;
+      outline: none;
+      font-size: 13px
+    }
+
+    .zalo-forward-note:focus {
+      border-color: #0068ff
+    }
+
+    /* Zalo Thông tin nhóm & Quản lý nhóm */
+    .rp-sum-name-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      max-width: 100%;
+      padding: 0 12px
+    }
+
+    .rp-sum-edit-btn {
+      width: 24px;
+      height: 24px;
+      border: 0;
+      background: #f1f3f6;
+      color: #52627a;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0
+    }
+
+    .rp-sum-edit-btn:hover {
+      background: #e5efff;
+      color: #0068ff
+    }
+
+    .rp-sum-edit-btn svg {
+      width: 13px;
+      height: 13px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2
+    }
+
+    .rp-qa-btn.active .rp-qa-ico {
+      background: #e5efff;
+      color: #0068ff
+    }
+
+    .conv-pin-ico {
+      display: inline-flex;
+      color: #758398;
+      transform: rotate(35deg)
+    }
+
+    .conv-pin-ico svg {
+      width: 12px;
+      height: 12px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2
+    }
+
+    .rp-manage-lock-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      background: #f4f5f7;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #081c36;
+      border-bottom: 1px solid #eceff4
+    }
+
+    .rp-manage-lock-bar svg {
+      width: 14px;
+      height: 14px;
+      fill: currentColor;
+      stroke: none
+    }
+
+    .rp-manage-group {
+      padding: 14px 16px;
+      border-bottom: 6px solid #f4f5f7
+    }
+
+    .rp-manage-group:last-child {
+      border-bottom: 0
+    }
+
+    .rp-manage-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #081c36;
+      margin-bottom: 10px
+    }
+
+    .rp-manage-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      font-size: 13.5px;
+      line-height: 1.38;
+      color: #1c293c
+    }
+
+    .rp-manage-row.readonly .rp-manage-lbl {
+      color: #7b8798
+    }
+
+    .rp-manage-lbl-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+      min-width: 0
+    }
+
+    .rp-manage-help {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      border: 1.4px solid #8a96a8;
+      color: #8a96a8;
+      font-size: 10px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      cursor: help
+    }
+
+    .rp-manage-chk {
+      width: 18px;
+      height: 18px;
+      accent-color: #0068ff;
+      cursor: pointer;
+      flex-shrink: 0;
+      border-radius: 4px
+    }
+
+    .rp-manage-chk:disabled {
+      opacity: .5;
+      cursor: not-allowed
+    }
+
+    .rp-manage-switch {
+      position: relative;
+      display: inline-flex;
+      width: 34px;
+      height: 19px;
+      flex-shrink: 0;
+      cursor: pointer
+    }
+
+    .rp-manage-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0
+    }
+
+    .rp-manage-slider {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: #cdd5e0;
+      transition: background .16s
+    }
+
+    .rp-manage-slider::before {
+      content: "";
+      position: absolute;
+      width: 15px;
+      height: 15px;
+      left: 2px;
+      top: 2px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+      transition: transform .16s
+    }
+
+    .rp-manage-switch input:checked+.rp-manage-slider {
+      background: #0068ff
+    }
+
+    .rp-manage-switch input:checked+.rp-manage-slider::before {
+      transform: translateX(15px)
+    }
+
+    .rp-manage-switch input:disabled+.rp-manage-slider {
+      opacity: .45;
+      cursor: not-allowed
+    }
+
+    #input-bar.composer-locked .composer-toolbar,
+    #input-bar.composer-locked #inline-emoji-btn,
+    #input-bar.composer-locked #quick-like-btn,
+    #input-bar.composer-locked #send-btn {
+      opacity: .45;
+      pointer-events: none
+    }
+
+    #input-bar.composer-locked #message-input {
+      background: #f5f7fa;
+      color: #758398;
+      cursor: not-allowed
     }
   </style>
 </body>

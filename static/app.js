@@ -47,6 +47,7 @@ const state = {
   viewedProfile: null,
   blockedUsers: new Set(),
   mutedConversations: new Set(),
+  pinnedConversations: new Set(),
   profileTarget: null,
   // Hồ sơ người dùng dùng để hiển thị avatar thật trong tin nhắn.
   userProfiles: new Map(),
@@ -54,6 +55,7 @@ const state = {
   lastSeenMap: new Map(),
   pendingSentByTarget: new Map(),
   replyTo: null,
+  replyMention: null,
   contactsSubView: 'friends', // 'friends' | 'groups' | 'requests'
   contactsSearch: '',
   contactsSort: 'az',
@@ -109,6 +111,8 @@ const UI_ICONS = {
   checkList: '<svg viewBox="0 0 24 24"><polyline points="3 7 5 9 8 5"/><line x1="12" y1="7" x2="21" y2="7"/><polyline points="3 14 5 16 8 12"/><line x1="12" y1="14" x2="21" y2="14"/><line x1="3" y1="20" x2="21" y2="20"/></svg>',
   undo: '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
   chevronRight: '<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>',
+  settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  lock: '<svg viewBox="0 0 24 24"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zm-9-2a3 3 0 1 1 6 0v2H9V6zm3 11a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>',
 };
 
 const OWNER_KEY_BADGE_HTML = `<span class="owner-key-badge" title="Trưởng nhóm">${UI_ICONS.keyGold}</span>`;
@@ -355,6 +359,7 @@ function onLoginResult(msg) {
     state.resumingSession = false;
     document.documentElement.classList.remove('zchat-resuming');
     state.username = msg.username || getStoredSessionUser() || dom.usernameInput.value.trim();
+    loadPinnedConversations(state.username);
     if (msg.sessionToken) saveStoredSession(state.username, msg.sessionToken);
     if (!state.currentConvId) state.pendingRestoreConvId = getSavedActiveConv(state.username);
     dom.loginScreen.style.display = 'none';
@@ -437,6 +442,7 @@ function doLocalLogout() {
   state.friends = [];
   state.pendingRequests = [];
   state.groups.clear();
+  state.pinnedConversations.clear();
   state.intentionalLogout = false;
   clearStoredSession();
   document.documentElement.classList.remove('zchat-resuming');
@@ -1125,6 +1131,7 @@ function onGroupUpdated(msg) {
     dom.chatHeaderName.textContent = merged.name;
     dom.chatHeaderAv.innerHTML = groupAvatarInner(msg.id, merged.name);
     updateChatHeaderStatus();
+    updateComposerPermissions();
     renderMessages();
     if (state.rightPanelOpen) renderRightPanel();
     const modalOpen = $('group-action-modal-overlay')?.classList.contains('visible');
@@ -1330,6 +1337,8 @@ function updateStrangerBanner(otherUsername) {
 // ─── Select conversation ───────────────────────────────────────────────────────
 function selectConversation(convId) {
   closeMessageMenu();
+  closeMentionBox();
+  clearReply();
   exitMultiSelectMode();
   state.currentConvId = convId;
   saveActiveConv(state.username, convId);
@@ -1373,6 +1382,7 @@ function selectConversation(convId) {
   dom.chatHeaderName.textContent = conv.name;
   state.rightPanelView = 'info';
   updateChatHeaderStatus();
+  updateComposerPermissions();
   if (state.rightPanelOpen) renderRightPanel();
 
   if (conv.messages.length === 0) {
@@ -1620,8 +1630,12 @@ function renderConversationList() {
     return;
   }
 
-  // Không tìm kiếm người chưa kết bạn ở danh sách đoạn chat: chỉ lọc trong các đoạn chat hiện có (hoặc bạn bè đã kết bạn / nhóm đã tham gia)
-  const convArray = [...state.conversations.entries()].sort((a,b) => new Date(b[1].lastTimestamp || 0) - new Date(a[1].lastTimestamp || 0));
+  // Ghim hội thoại lên đầu danh sách, phần còn lại sắp theo thời gian tin nhắn mới nhất.
+  const convArray = [...state.conversations.entries()].sort((a, b) => {
+    const pinDiff = (state.pinnedConversations.has(b[0]) ? 1 : 0) - (state.pinnedConversations.has(a[0]) ? 1 : 0);
+    if (pinDiff !== 0) return pinDiff;
+    return new Date(b[1].lastTimestamp || 0) - new Date(a[1].lastTimestamp || 0);
+  });
   for (const [convId, conv] of convArray) {
     if (tab === 'groups' && conv.type !== 'group') continue;
     if (tab === 'unread' && !(conv.unread > 0)) continue;
@@ -1637,6 +1651,7 @@ function renderConversationList() {
     const dot = isOnline ? '<span class="online-dot"></span>' : '';
     const gid = conv.type === 'group' ? convId.replace('group:', '') : '';
     const isMuted = state.mutedConversations.has(convId);
+    const isPinnedConv = state.pinnedConversations.has(convId);
     const groupBadge = conv.type === 'group' ? `<span class="conv-group-ico">${UI_ICONS.users}</span>` : '';
     const lastTs = conv.lastTimestamp ? formatRelativeShort(conv.lastTimestamp) : (conv.lastTime || '');
 
@@ -1649,6 +1664,7 @@ function renderConversationList() {
       </div>
       <div class="conv-meta">
         <div style="display:flex;align-items:center;gap:4px">
+          ${isPinnedConv ? `<span class="conv-pin-ico" title="Đã ghim hội thoại">${UI_ICONS.pin}</span>` : ''}
           ${isMuted ? `<span class="conv-meta-icons" title="Đã tắt thông báo">${UI_ICONS.bellOff}</span>` : ''}
           <div class="conv-time">${escHtml(lastTs)}</div>
         </div>
@@ -1854,21 +1870,32 @@ function appendMessageDOM(msg, grouped=false, isLastInGroup=true, isVeryLastMine
   const metaHtml = (isLastInGroup || msg.starred)
     ? `<div class="msg-bubble-meta-row">${starBadge}${isLastInGroup ? `<span class="msg-bubble-time">${time}</span>` : ''}</div>`
     : '';
-  let bubbleContent=msgType==='file_share'?buildFileBubble(msg,isMine,showSender):`<div class="msg-bubble">${renderMessageText(msg.content)}${metaHtml}</div>`;
-  const replyCard=msg.replyToId?`<div class="message-reply-context"><b>${escHtml(msg.replyToUsername||'')}</b><span>${escHtml(msg.replyToContent||'Tin nhắn được trả lời')}</span></div>`:'';
-  const deliveredPill = isVeryLastMine ? `<div class="msg-delivered-pill">✓✓ Đã nhận</div>` : '';
+  const replyCard = msg.replyToId
+    ? `<div class="message-reply-context" title="Nhảy đến tin nhắn được trả lời" onclick="event.stopPropagation();jumpToMessage('${escHtml(msg.replyToId)}')"><b>${escHtml(msg.replyToUsername || '')}</b><span>${escHtml(msg.replyToContent || 'Tin nhắn được trả lời')}</span></div>`
+    : '';
+  let bubbleContent = msgType === 'file_share'
+    ? buildFileBubble(msg, isMine, showSender)
+    : `<div class="msg-bubble">${replyCard}${renderMessageText(msg.content)}${metaHtml}</div>`;
+  let deliveredPill = '';
+  if (isVeryLastMine) {
+    const convObj = state.conversations.get(state.currentConvId);
+    const peerOnline = inDm
+      ? Boolean(convObj?.name && state.onlineUsers.includes(convObj.name))
+      : Boolean(groupObj && (groupObj.members || []).some(u => u !== state.username && state.onlineUsers.includes(u)));
+    deliveredPill = `<div class="msg-delivered-pill">${peerOnline ? '✓✓ Đã nhận' : '✓ Đã gửi'}</div>`;
+  }
   const actions=msg.messageId?`<div class="msg-actions" onclick="event.stopPropagation()">
     <button type="button" class="msg-act-circle" title="Trả lời" onclick="replyToMessage('${msg.messageId}')">${UI_ICONS.quote}</button>
     <button type="button" class="msg-act-circle" title="Chuyển tiếp" onclick="forwardMessage('${msg.messageId}')">${UI_ICONS.forward}</button>
     <button type="button" class="msg-act-circle more" title="Thêm" onclick="openMessageMenu(event,'${msg.messageId}')">${UI_ICONS.dotsH}</button>
   </div>`:'';
-  const bodyHtml=`<div class="msg-body">${showSender&&!senderInCard?`<div class="msg-sender">${escHtml(msg.from||'')}</div>`:''}${replyCard}<div class="msg-bubble-row">${bubbleContent}${actions}</div>${deliveredPill}<div class="msg-time">${time}</div></div>`;
+  const bodyHtml=`<div class="msg-body">${showSender&&!senderInCard?`<div class="msg-sender">${escHtml(msg.from||'')}</div>`:''}${msgType==='file_share'?replyCard:''}<div class="msg-bubble-row">${bubbleContent}${actions}</div>${deliveredPill}<div class="msg-time">${time}</div></div>`;
   const selectChk = msg.messageId
     ? `<button type="button" class="msg-select-chk" aria-label="Chọn tin nhắn" onclick="event.stopPropagation();toggleSelectMessage('${msg.messageId}')">${isSelected?'✓':''}</button>`
     : '';
   // Avatar nằm cùng hàng với bong bóng; trong nhóm có thể bấm vào avatar người khác để mở combobox thao tác, và hiện chìa khóa vàng nếu người nhắn là trưởng nhóm.
   const clickableAvatar = inGroup && !isMine && Boolean(msg.from);
-  const isSenderGroupOwner = Boolean(inGroup && groupObj && msg.from && groupObj.createdBy === msg.from);
+  const isSenderGroupOwner = Boolean(inGroup && groupObj && msg.from && groupObj.createdBy === msg.from && getGroupSettings(groupObj).highlightOwnerMsg !== false);
   const senderAvatar = grouped ? '<div class="msg-av-spacer" aria-hidden="true"></div>' : avatarMarkup(msg.from || '?', 'msg-av', clickableAvatar, isSenderGroupOwner);
   wrapper.innerHTML = `${selectChk}${senderAvatar}${bodyHtml}`;
   if(msgType==='revoked'){
@@ -2048,6 +2075,13 @@ async function copyMessageText(messageId) {
 function togglePinMessage(messageId) {
   const conv = state.conversations.get(state.currentConvId);
   if (!conv) return;
+  if (conv.type === 'group') {
+    const g = state.groups.get(conv.id.replace('group:', ''));
+    if (g && g.createdBy !== state.username && getGroupSettings(g).allowPin === false) {
+      showToast('Chỉ trưởng nhóm mới được phép ghim tin nhắn.', 'error');
+      return;
+    }
+  }
   if (conv.pinnedMessage?.messageId === messageId) {
     wsSend({ type: 'unpin_message', conversationId: state.currentConvId });
   } else {
@@ -2171,9 +2205,8 @@ function multiSelectForward() {
   if (!conv) return;
   const selected = conv.messages.filter(m => state.selectedMsgIds.has(m.messageId));
   if (!selected.length) return;
-  const combined = selected.map(m => getMessageCopyableText(m)).filter(Boolean).join('\n');
   exitMultiSelectMode();
-  openForwardPicker({ messageId: selected[0].messageId, content: combined || 'Tin nhắn được chuyển tiếp' });
+  openForwardPicker(selected);
 }
 
 function multiSelectDeleteForMe() {
@@ -2223,7 +2256,7 @@ function openAvatarActionMenu(event, targetUsername) {
   const menu = document.createElement('div');
   menu.className = 'avatar-action-popover';
   menu.innerHTML = `
-    <div class="avatar-popover-head">${userAvatarInner(targetUsername)}<span>${escHtml(targetUsername)}</span></div>
+    <div class="avatar-popover-head"><div class="conv-avatar" style="width:28px;height:28px;font-size:12px">${userAvatarInner(targetUsername)}</div><span>${escHtml(targetUsername)}</span></div>
     <button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();startChat('${escHtml(targetUsername)}')">
       ${UI_ICONS.chat}<span>Nhắn tin</span>
     </button>
@@ -2264,28 +2297,141 @@ function showReactionPeople(messageId){
   overlay.innerHTML=`<div class="reaction-people-card"><div class="reaction-people-head"><b>Cảm xúc</b><button onclick="this.closest('.reaction-people-overlay').remove()">×</button></div><div class="reaction-people-list">${rows}</div></div>`;
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});dom.messages.appendChild(overlay);
 }
-function replyToMessage(messageId){
-  const conv=state.conversations.get(state.currentConvId),m=conv?.messages.find(x=>x.messageId===messageId);if(!m)return;
-  state.replyTo=m;let el=$('reply-preview');if(!el){el=document.createElement('div');el.id='reply-preview';el.className='reply-preview';$('input-bar').prepend(el);}
-  el.innerHTML=`<span>Đang trả lời <b>${escHtml(m.from)}</b>: ${escHtml((m.content||m.filename||'Tệp đính kèm').slice(0,120))}</span><button onclick="state.replyTo=null;this.parentElement.remove()">×</button>`;dom.messageInput.focus();
+function renderReplyMentionChip() {
+  const chip = $('reply-mention-chip');
+  if (!chip) return;
+  if (state.replyMention) {
+    chip.textContent = `@${state.replyMention}`;
+    chip.style.display = 'inline-flex';
+  } else {
+    chip.textContent = '';
+    chip.style.display = 'none';
+  }
 }
-function forwardMessage(messageId){
-  const conv=state.conversations.get(state.currentConvId),m=conv?.messages.find(x=>x.messageId===messageId);if(!m)return;
+function clearReplyMention() {
+  state.replyMention = null;
+  renderReplyMentionChip();
+  updateComposerActionBtn();
+  dom.messageInput?.focus();
+}
+function clearReply() {
+  state.replyTo = null;
+  state.replyMention = null;
+  $('reply-preview')?.remove();
+  renderReplyMentionChip();
+  updateComposerActionBtn();
+}
+function summarizeReplyTarget(m) {
+  if (!m) return 'Tin nhắn';
+  const mime = m.mimeType || '';
+  if (m.fileId) {
+    if (mime.startsWith('image/')) return '[Hình ảnh]';
+    if (mime.startsWith('video/')) return `[Video] ${m.filename || ''}`.trim();
+    if (mime.startsWith('audio/')) return '[Tin nhắn thoại]';
+    return `[Tệp] ${m.filename || 'Tệp đính kèm'}`;
+  }
+  return String(m.content || 'Tin nhắn').replace(/\s+/g, ' ').trim();
+}
+function replyToMessage(messageId) {
+  const conv = state.conversations.get(state.currentConvId), m = conv?.messages.find(x => x.messageId === messageId);
+  if (!m) return;
+  state.replyTo = m;
+  const inGroup = Boolean(state.currentConvId?.startsWith('group:'));
+  state.replyMention = (inGroup && m.from && m.from !== state.username) ? m.from : null;
+  renderReplyMentionChip();
+  updateComposerActionBtn();
+
+  const shell = document.querySelector('#input-bar .composer-shell');
+  const inputRow = shell?.querySelector('.input-row');
+  let el = $('reply-preview');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'reply-preview';
+    el.className = 'reply-preview';
+    if (shell && inputRow) shell.insertBefore(el, inputRow);
+    else if (shell) shell.appendChild(el);
+    else $('input-bar')?.prepend(el);
+  }
+  const previewText = summarizeReplyTarget(m).slice(0, 120);
+  const thumbHtml = (m.fileId && m.mimeType?.startsWith('image/'))
+    ? `<img class="reply-preview-thumb" src="/api/files/${encodeURIComponent(m.fileId)}" alt="">`
+    : '';
+  el.innerHTML = `
+    <div class="reply-preview-body">
+      <div class="reply-preview-top">${UI_ICONS.quote}<span>Trả lời <b>${escHtml(m.from || '')}</b></span></div>
+      <div class="reply-preview-txt">${escHtml(previewText)}</div>
+    </div>
+    ${thumbHtml}
+    <button type="button" class="reply-preview-close" title="Hủy trả lời" onclick="clearReply()">×</button>
+  `;
+  dom.messageInput?.focus();
+}
+function forwardMessage(messageId) {
+  const conv = state.conversations.get(state.currentConvId), m = conv?.messages.find(x => x.messageId === messageId);
+  if (!m) return;
   openForwardPicker(m);
 }
-function openForwardPicker(message){
-  document.querySelector('.forward-overlay')?.remove();
-  const items=[...state.conversations.values()].filter(c=>c.id!==state.currentConvId).sort((a,b)=>(b.lastTimestamp||0)-(a.lastTimestamp||0));
-  const overlay=document.createElement('div');overlay.className='forward-overlay';overlay.innerHTML=`<div class="forward-card"><div class="forward-head"><b>Chuyển tiếp tin nhắn</b><button onclick="this.closest('.forward-overlay').remove()">×</button></div><input class="forward-search" placeholder="Tìm cá nhân hoặc nhóm..." oninput="filterForwardTargets(this.value)"><div class="forward-targets">${items.map(c=>`<label class="forward-target" data-search="${escHtml((c.name+' '+c.id).toLowerCase())}"><input type="checkbox" value="${escHtml(c.id)}"><span class="forward-target-avatar">${getInitials(c.name)}</span><span>${escHtml(c.name)}</span><small>${c.type==='group'?'Nhóm':'Cá nhân'}</small></label>`).join('')||'<p>Chưa có đoạn chat khác.</p>'}</div><button class="forward-send" onclick="sendForwardedMessage('${message.messageId}')">Chuyển tiếp</button></div>`;
-  overlay._message=message;overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});document.body.appendChild(overlay);
+function describeForwardPreview(messages) {
+  if (!messages.length) return '';
+  if (messages.length > 1) return `Đang chia sẻ ${messages.length} tin nhắn`;
+  return summarizeReplyTarget(messages[0]).slice(0, 140);
 }
-function filterForwardTargets(q){document.querySelectorAll('.forward-target').forEach(el=>el.style.display=el.dataset.search.includes(q.toLowerCase())?'flex':'none');}
-function sendForwardedMessage(messageId){
-  const overlay=document.querySelector('.forward-overlay'),message=overlay?._message;if(!overlay||!message)return;
-  const selected=[...overlay.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);if(!selected.length){showToast('Hãy chọn ít nhất một đoạn chat.','error');return;}
-  const body=message.content||message.filename||'Tệp đính kèm';
-  selected.forEach(id=>{const c=state.conversations.get(id);if(!c)return;const content=`${state.username} đã chuyển tiếp một tin nhắn.\n${body}`;if(c.type==='group')wsSend({type:'group_message',groupId:id.replace('group:',''),content});else wsSend({type:'private_message',to:c.name,content});});
-  overlay.remove();showToast(`Đã chuyển tiếp đến ${selected.length} đoạn chat.`,'success');
+function openForwardPicker(messageOrList) {
+  document.querySelector('.forward-overlay')?.remove();
+  const messages = Array.isArray(messageOrList) ? messageOrList.filter(Boolean) : [messageOrList].filter(Boolean);
+  if (!messages.length) return;
+  const items = [...state.conversations.values()].filter(c => c.id !== state.currentConvId).sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
+  const targetHtml = items.map(c => {
+    const isGrp = c.type === 'group';
+    const avHtml = isGrp ? groupAvatarInner(c.id.replace('group:', ''), c.name) : userAvatarInner(c.name);
+    return `<label class="forward-target" data-search="${escHtml((c.name + ' ' + c.id).toLowerCase())}"><input type="checkbox" value="${escHtml(c.id)}"><span class="forward-target-avatar${isGrp ? ' group' : ''}">${avHtml}</span><span>${escHtml(c.name)}</span><small>${isGrp ? 'Nhóm' : 'Cá nhân'}</small></label>`;
+  }).join('') || '<p style="color:#6d7a8c;font-size:13px;padding:12px 0;text-align:center">Chưa có đoạn chat khác.</p>';
+  const overlay = document.createElement('div');
+  overlay.className = 'forward-overlay';
+  overlay.innerHTML = `<div class="forward-card"><div class="forward-head"><b>Chia sẻ</b><button onclick="this.closest('.forward-overlay').remove()">×</button></div><input class="forward-search" placeholder="Tìm kiếm cá nhân hoặc nhóm..." oninput="filterForwardTargets(this.value)"><div class="zalo-forward-preview">${escHtml(describeForwardPreview(messages))}</div><div class="forward-targets">${targetHtml}</div><input id="forward-note-input" class="zalo-forward-note" type="text" placeholder="Nhập tin nhắn kèm theo (tuỳ chọn)..."><button class="forward-send" onclick="sendForwardedMessage('${escHtml(messages[0].messageId || '')}')">Chia sẻ</button></div>`;
+  overlay._messages = messages;
+  overlay._message = messages[0];
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+function filterForwardTargets(q) { document.querySelectorAll('.forward-target').forEach(el => el.style.display = el.dataset.search.includes(q.toLowerCase()) ? 'flex' : 'none'); }
+function sendForwardedMessage(messageId) {
+  const overlay = document.querySelector('.forward-overlay');
+  const messages = overlay?._messages || (overlay?._message ? [overlay._message] : []);
+  if (!overlay || !messages.length) return;
+  const selected = [...overlay.querySelectorAll('input[type=checkbox]:checked')].map(x => x.value);
+  if (!selected.length) { showToast('Hãy chọn ít nhất một đoạn chat.', 'error'); return; }
+  const note = ($('forward-note-input')?.value || '').trim();
+  selected.forEach(id => {
+    const c = state.conversations.get(id);
+    if (!c) return;
+    const gid = c.type === 'group' ? id.replace('group:', '') : null;
+    messages.forEach(m => {
+      if (m.fileId) {
+        const payload = {
+          type: 'file_share',
+          fileId: m.fileId,
+          filename: m.filename || 'file',
+          fileSize: m.fileSize || '',
+          mimeType: m.mimeType || 'application/octet-stream',
+        };
+        if (c.type === 'group') payload.groupId = gid;
+        else payload.to = c.name;
+        wsSend(payload);
+      } else {
+        const content = String(m.content || '').trim();
+        if (!content) return;
+        if (c.type === 'group') wsSend({ type: 'group_message', groupId: gid, content });
+        else wsSend({ type: 'private_message', to: c.name, content });
+      }
+    });
+    if (note) {
+      if (c.type === 'group') wsSend({ type: 'group_message', groupId: gid, content: note });
+      else wsSend({ type: 'private_message', to: c.name, content: note });
+    }
+  });
+  overlay.remove();
+  showToast(`Đã chuyển tiếp đến ${selected.length} đoạn chat.`, 'success');
 }
 
 function isFileCardMsg(msg) {
@@ -2584,29 +2730,106 @@ function stepMsgSearch(delta) {
 }
 
 // ─── URL rendering ────────────────────────────────────────────────────────────
+function escapeRegex(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function renderPlainWithMentions(segment) {
+  const escaped = escHtml(segment);
+  const conv = state.conversations.get(state.currentConvId);
+  const members = conv?.type === 'group'
+    ? [...new Set([...(state.groups.get(state.currentConvId.replace('group:', ''))?.members || []), ...conv.messages.map(m => m.from).filter(Boolean)])]
+    : [];
+  const namedAlternation = members.filter(Boolean).sort((a, b) => b.length - a.length).map(u => escapeRegex(escHtml(u))).join('|');
+  const mentionPat = namedAlternation
+    ? new RegExp(`(^|[\\s(\\[])(@(?:${namedAlternation}|[\\p{L}\\p{N}_.-]{1,32}))`, 'giu')
+    : /(^|[\s(\[])(@[\p{L}\p{N}_.-]{1,32})/gu;
+  return escaped.replace(mentionPat, '$1<span class="msg-mention">$2</span>');
+}
+
 function renderMessageText(value) {
   const text = String(value || '');
   const urlPat = /((https?:\/\/|www\.)[^\s<]+)/gi;
   let html = '', last = 0;
   for (const match of text.matchAll(urlPat)) {
     const raw = match[0], start = match.index;
-    html += escHtml(text.slice(last, start));
+    html += renderPlainWithMentions(text.slice(last, start));
     const clean = raw.replace(/[),.!?;:]+$/, '');
     const suffix = raw.slice(clean.length);
     const href = clean.startsWith('www.') ? `https://${clean}` : clean;
     html += `<a class="message-link" href="${escHtml(href)}" target="_blank" rel="noopener noreferrer">${escHtml(clean)}</a>${escHtml(suffix)}`;
     last = start + raw.length;
   }
-  html += escHtml(text.slice(last));
+  html += renderPlainWithMentions(text.slice(last));
   return html.replace(/\n/g, '<br>');
+}
+
+function closeMentionBox() {
+  const box = $('mention-suggest-box');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+}
+
+function selectMentionCandidate(username) {
+  const input = dom.messageInput;
+  if (!input || !username) return;
+  const pos = input.selectionStart ?? input.value.length;
+  const before = input.value.slice(0, pos);
+  const after = input.value.slice(pos);
+  const replaced = before.replace(/(^|\s)@([^\s@]*)$/, `$1@${username} `);
+  input.value = replaced + after;
+  const nextCaret = replaced.length;
+  input.setSelectionRange(nextCaret, nextCaret);
+  closeMentionBox();
+  autoResize(input);
+  updateComposerActionBtn();
+  input.focus();
+}
+
+function handleMentionAutocomplete() {
+  const box = $('mention-suggest-box');
+  const input = dom.messageInput;
+  if (!box || !input || !state.currentConvId?.startsWith('group:')) {
+    closeMentionBox();
+    return;
+  }
+  const pos = input.selectionStart ?? input.value.length;
+  const before = input.value.slice(0, pos);
+  const m = before.match(/(?:^|\s)@([^\s@]*)$/);
+  if (!m) { closeMentionBox(); return; }
+  const q = m[1].toLowerCase();
+  const gid = state.currentConvId.replace('group:', '');
+  const members = (state.groups.get(gid)?.members || []).filter(u => u && u !== state.username && u.toLowerCase().includes(q));
+  if (!members.length) { closeMentionBox(); return; }
+  box.innerHTML = members.slice(0, 8).map(u => `
+    <button type="button" class="zalo-mention-opt" onmousedown="event.preventDefault();selectMentionCandidate('${escHtml(u)}')">
+      <div class="conv-avatar" style="width:26px;height:26px;font-size:11px;flex-shrink:0">${userAvatarInner(u)}</div>
+      <span>${escHtml(u)}</span>
+    </button>
+  `).join('');
+  box.style.display = 'block';
 }
 
 // ─── Send message ─────────────────────────────────────────────────────────────
 function sendMessage() {
-  let content = dom.messageInput.value.trim();
-  if (!content || !state.currentConvId) return;
-  const replyMeta=state.replyTo?{replyToId:state.replyTo.messageId,replyToUsername:state.replyTo.from,replyToContent:String(state.replyTo.content||state.replyTo.filename||'Tệp đính kèm').slice(0,180)}:{};
-  state.replyTo=null; $('reply-preview')?.remove();
+  if (!state.currentConvId) return;
+  if (dom.messageInput?.disabled) {
+    showToast('Trưởng nhóm đã tạm khóa quyền gửi tin nhắn.', 'error');
+    return;
+  }
+  const raw = dom.messageInput.value.trim();
+  const mentionPrefix = state.replyMention ? `@${state.replyMention}` : '';
+  if (!raw && !mentionPrefix) return;
+  let content = raw;
+  if (mentionPrefix && !raw.toLowerCase().startsWith(mentionPrefix.toLowerCase())) {
+    content = raw ? `${mentionPrefix} ${raw}` : mentionPrefix;
+  }
+  const replyMeta = state.replyTo ? {
+    replyToId: state.replyTo.messageId,
+    replyToUsername: state.replyTo.from,
+    replyToContent: String(summarizeReplyTarget(state.replyTo) || 'Tệp đính kèm').slice(0, 180)
+  } : {};
+  clearReply();
+  closeMentionBox();
   dom.messageInput.value = '';
   dom.messageInput.style.height = '';
   updateComposerActionBtn();
@@ -2624,13 +2847,13 @@ function sendMessage() {
 }
 
 function updateComposerActionBtn() {
-  const hasText = Boolean(dom.messageInput?.value.trim());
+  const hasText = Boolean(dom.messageInput?.value.trim() || state.replyMention);
   if ($('quick-like-btn')) $('quick-like-btn').style.display = hasText ? 'none' : 'inline-flex';
   if (dom.sendBtn) dom.sendBtn.style.display = hasText ? 'flex' : 'none';
 }
 
 function sendQuickLike() {
-  if (!state.currentConvId) return;
+  if (!state.currentConvId || dom.messageInput?.disabled) return;
   const conv = state.conversations.get(state.currentConvId);
   if (!conv) return;
   if (conv.type === 'dm') wsSend({ type: 'private_message', to: conv.name, content: '👍' });
@@ -2834,6 +3057,67 @@ function closeRightPanel() {
   $('shared-files-btn').classList.remove('active-panel');
 }
 
+const GROUP_DEFAULT_SETTINGS = {
+  allowEditInfo: true,
+  allowPin: true,
+  allowNotes: true,
+  allowPolls: true,
+  allowSendMessage: true,
+  requireApproval: false,
+  highlightOwnerMsg: true,
+  allowNewMemberHistory: true,
+};
+
+function getGroupSettings(groupObj) {
+  return { ...GROUP_DEFAULT_SETTINGS, ...(groupObj?.settings || {}) };
+}
+
+function loadPinnedConversations(username) {
+  state.pinnedConversations.clear();
+  if (!username) return;
+  try {
+    const raw = JSON.parse(localStorage.getItem(`zchat_pinned_convs_${username}`) || '[]');
+    if (Array.isArray(raw)) raw.forEach(id => id && state.pinnedConversations.add(id));
+  } catch { /* ignore */ }
+}
+
+function togglePinConversation(convId) {
+  if (!convId || !state.username) return;
+  if (state.pinnedConversations.has(convId)) {
+    state.pinnedConversations.delete(convId);
+    showToast('Đã bỏ ghim hội thoại.', 'info');
+  } else {
+    state.pinnedConversations.add(convId);
+    showToast('Đã ghim hội thoại lên đầu.', 'success');
+  }
+  try {
+    localStorage.setItem(`zchat_pinned_convs_${state.username}`, JSON.stringify([...state.pinnedConversations]));
+  } catch { /* ignore */ }
+  renderConversationList();
+  if (state.rightPanelOpen) renderRightPanel();
+}
+
+function updateComposerPermissions() {
+  const inputBar = $('input-bar');
+  const conv = state.conversations.get(state.currentConvId);
+  if (!inputBar || !dom.messageInput) return;
+  if (conv?.type === 'group') {
+    const gid = conv.id.replace('group:', '');
+    const g = state.groups.get(gid);
+    const isOwner = Boolean(g && g.createdBy === state.username);
+    const allowSend = isOwner || getGroupSettings(g).allowSendMessage !== false;
+    inputBar.classList.toggle('composer-locked', !allowSend);
+    dom.messageInput.disabled = !allowSend;
+    dom.messageInput.placeholder = allowSend
+      ? `Nhập @, tin nhắn tới ${conv.name}`
+      : 'Trưởng nhóm đã tạm khóa quyền gửi tin nhắn';
+  } else {
+    inputBar.classList.remove('composer-locked');
+    dom.messageInput.disabled = false;
+    if (conv) dom.messageInput.placeholder = `Nhập @, tin nhắn tới ${conv.name}`;
+  }
+}
+
 function openRightPanelMembers() {
   const conv = state.conversations.get(state.currentConvId);
   if (!conv || conv.type !== 'group') return;
@@ -2842,6 +3126,29 @@ function openRightPanelMembers() {
   dom.rightPanel.classList.add('open');
   $('shared-files-btn')?.classList.add('active-panel');
   renderRightPanel();
+}
+
+function openRightPanelManage() {
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv || conv.type !== 'group') return;
+  state.rightPanelView = 'manage';
+  state.rightPanelOpen = true;
+  dom.rightPanel.classList.add('open');
+  $('shared-files-btn')?.classList.add('active-panel');
+  renderRightPanel();
+}
+
+function toggleGroupSetting(groupId, key, value) {
+  if (!groupId || !key) return;
+  const g = state.groups.get(groupId);
+  if (!g || g.createdBy !== state.username) {
+    showToast('Tính năng chỉ dành cho quản trị viên.', 'error');
+    if (state.rightPanelOpen) renderRightPanel();
+    return;
+  }
+  const next = Boolean(value);
+  g.settings = { ...getGroupSettings(g), [key]: next };
+  wsSend({ type: 'group_update_settings', groupId, settings: { [key]: next } });
 }
 
 function backToRightPanelInfo() {
@@ -2865,35 +3172,40 @@ function renderRightPanelSummary(conv) {
   const gid = isGroup ? conv.id.replace('group:', '') : '';
   const g = isGroup ? state.groups.get(gid) : null;
   const isOwner = Boolean(isGroup && g && g.createdBy === state.username);
+  const allowEditInfo = !isGroup || isOwner || getGroupSettings(g).allowEditInfo !== false;
   const avHtml = isGroup ? groupAvatarInner(gid, conv.name) : userAvatarInner(conv.name);
-  const subText = isGroup ? `${g?.members?.length || 0} thành viên${g?.createdBy ? ` · Trưởng nhóm: ${g.createdBy}` : ''}` : 'Trò chuyện riêng';
+  const subText = isGroup ? '' : 'Trò chuyện riêng';
   const muted = state.mutedConversations.has(conv.id);
+  const pinnedConv = state.pinnedConversations.has(conv.id);
   sumEl.innerHTML = `
     <div class="rp-sum-av">${avHtml}</div>
-    <div class="rp-sum-name">${escHtml(conv.name)}</div>
-    <div class="rp-sum-sub">${escHtml(subText)}</div>
+    <div class="rp-sum-name-row">
+      <div class="rp-sum-name">${escHtml(conv.name)}</div>
+      ${isGroup && allowEditInfo ? `<button type="button" class="rp-sum-edit-btn" title="Đổi tên & ảnh đại diện nhóm" onclick="openGroupEditInfoModal()">${UI_ICONS.edit}</button>` : ''}
+    </div>
+    ${subText ? `<div class="rp-sum-sub">${escHtml(subText)}</div>` : ''}
     <div class="rp-quick-actions">
-      <button type="button" class="rp-qa-btn" onclick="toggleMuteConversation(${!muted});setTimeout(()=>renderRightPanel(),150)">
+      <button type="button" class="rp-qa-btn${muted ? ' active' : ''}" onclick="toggleMuteConversation(${!muted});setTimeout(()=>renderRightPanel(),150)">
         <span class="rp-qa-ico">${muted ? UI_ICONS.bell : UI_ICONS.bellOff}</span>
         <span>${muted ? 'Bật thông báo' : 'Tắt thông báo'}</span>
       </button>
+      <button type="button" class="rp-qa-btn${pinnedConv ? ' active' : ''}" onclick="togglePinConversation('${escHtml(conv.id)}')">
+        <span class="rp-qa-ico">${UI_ICONS.pin}</span>
+        <span>${pinnedConv ? 'Bỏ ghim hội thoại' : 'Ghim hội thoại'}</span>
+      </button>
       ${isGroup ? `
-        <button type="button" class="rp-qa-btn" onclick="openRightPanelMembers()">
-          <span class="rp-qa-ico">${UI_ICONS.users}</span>
-          <span>Thành viên</span>
-        </button>
         <button type="button" class="rp-qa-btn" onclick="addGroupMember()">
           <span class="rp-qa-ico">${UI_ICONS.userPlus}</span>
-          <span>Thêm bạn</span>
+          <span>Thêm thành viên</span>
         </button>
-        ${isOwner ? `<button type="button" class="rp-qa-btn" onclick="transferGroupOwner()">
-          <span class="rp-qa-ico">${UI_ICONS.crown}</span>
-          <span>Nhượng quyền</span>
-        </button>` : ''}
+        <button type="button" class="rp-qa-btn" onclick="openRightPanelManage()">
+          <span class="rp-qa-ico">${UI_ICONS.settings}</span>
+          <span>Quản lý nhóm</span>
+        </button>
       ` : `
-        <button type="button" class="rp-qa-btn" onclick="openProfilePage('${escHtml(conv.name)}')">
-          <span class="rp-qa-ico">${UI_ICONS.user}</span>
-          <span>Trang cá nhân</span>
+        <button type="button" class="rp-qa-btn" onclick="openGroupModal()">
+          <span class="rp-qa-ico">${UI_ICONS.users}</span>
+          <span>Tạo nhóm trò chuyện</span>
         </button>
       `}
     </div>`;
@@ -2914,10 +3226,16 @@ function renderRightPanel() {
   const conv = state.conversations.get(state.currentConvId);
   const isGroup = conv?.type === 'group';
   const showMembersView = Boolean(isGroup && state.rightPanelView === 'members');
+  const showManageView = Boolean(isGroup && state.rightPanelView === 'manage');
+  const inSubView = showMembersView || showManageView;
 
-  if ($('rp-back-btn')) $('rp-back-btn').style.display = showMembersView ? 'inline-flex' : 'none';
-  if ($('rp-header-title')) $('rp-header-title').textContent = showMembersView ? 'Thành viên' : 'Thông tin hội thoại';
-  if ($('rp-conv-summary')) $('rp-conv-summary').style.display = showMembersView ? 'none' : 'flex';
+  if ($('rp-back-btn')) $('rp-back-btn').style.display = inSubView ? 'inline-flex' : 'none';
+  if ($('rp-header-title')) {
+    $('rp-header-title').textContent = showManageView
+      ? 'Quản lý nhóm'
+      : (showMembersView ? 'Thành viên' : (isGroup ? 'Thông tin nhóm' : 'Thông tin hội thoại'));
+  }
+  if ($('rp-conv-summary')) $('rp-conv-summary').style.display = inSubView ? 'none' : 'flex';
 
   if (!conv) {
     renderRightPanelSummary(null);
@@ -2927,6 +3245,10 @@ function renderRightPanel() {
 
   if (showMembersView) {
     renderRightPanelMembersView(conv);
+    return;
+  }
+  if (showManageView) {
+    renderRightPanelManageView(conv);
     return;
   }
 
@@ -3001,14 +3323,12 @@ function renderRightPanel() {
     : visibleLinks.map(l => `<div class="link-item"><a href="${escHtml(l.url)}" target="_blank" rel="noopener noreferrer">${escHtml(l.display)}</a><div class="link-meta">${escHtml(l.from)} · ${formatTime(l.time)}</div></div>`).join('')
       + (revLinks.length > 4 ? `<button type="button" class="rp-view-all-btn" onclick="toggleRpShowAll('links')">${showAllLinks ? 'Thu gọn' : `Xem tất cả (${revLinks.length})`}</button>` : '');
 
+  const allowEditInfo = !isGroup || isOwner || getGroupSettings(g).allowEditInfo !== false;
   const membersSection = isGroup ? `
     <div class="rp-section${state.rpCollapsed.has('members') ? ' collapsed' : ''}" data-sec="members">
       <button type="button" class="rp-section-hdr" onclick="toggleRpSection('members')"><span>Thành viên nhóm</span>${chevSvg}</button>
       <div class="rp-section-body">
         <button type="button" class="rp-opt-row" onclick="openRightPanelMembers()">${UI_ICONS.users}<span>${(g?.members || []).length} thành viên</span></button>
-        <button type="button" class="rp-opt-row" onclick="addGroupMember()">${UI_ICONS.userPlus}<span>Thêm thành viên</span></button>
-        <button type="button" class="rp-opt-row" onclick="openGroupEditInfoModal()">${UI_ICONS.edit}<span>Đổi tên & ảnh nhóm</span></button>
-        ${isOwner ? `<button type="button" class="rp-opt-row" onclick="transferGroupOwner()">${UI_ICONS.crown}<span>Nhượng quyền trưởng nhóm</span></button>` : ''}
       </div>
     </div>` : '';
 
@@ -3017,7 +3337,9 @@ function renderRightPanel() {
       <button type="button" class="rp-section-hdr" onclick="toggleRpSection('security')"><span>Thiết lập bảo mật</span>${chevSvg}</button>
       <div class="rp-section-body">
         <button type="button" class="rp-opt-row" onclick="toggleMsgSearch()">${UI_ICONS.search}<span>Tìm trong hội thoại</span></button>
+        ${!isGroup ? `<button type="button" class="rp-opt-row" onclick="toggleProfilePageForChat('${escHtml(other)}')">${UI_ICONS.user}<span>Xem trang cá nhân</span></button>` : ''}
         ${!isGroup ? `<button type="button" class="rp-opt-row" onclick="toggleBlockUser('${escHtml(other)}',${blocked})">${blocked ? UI_ICONS.unlock : UI_ICONS.ban}<span>${blocked ? 'Gỡ chặn người này' : 'Chặn người này'}</span></button>` : ''}
+        ${!isGroup && state.friends.some(f => f.username === other) ? `<button type="button" class="rp-opt-row danger" onclick="confirmUnfriend('${escHtml(other)}')">${UI_ICONS.userMinus}<span>Hủy kết bạn</span></button>` : ''}
         <button type="button" class="rp-opt-row danger" onclick="deleteConversation()">${UI_ICONS.trash}<span>Xóa lịch sử trò chuyện</span></button>
         ${isGroup ? `<button type="button" class="rp-opt-row danger" onclick="leaveGroup()">${UI_ICONS.logOut}<span>Rời nhóm</span></button>` : ''}
         ${isOwner ? `<button type="button" class="rp-opt-row danger" onclick="deleteGroup()">${UI_ICONS.trash}<span>Giải tán nhóm</span></button>` : ''}
@@ -3039,6 +3361,61 @@ function renderRightPanel() {
       <div class="rp-section-body">${linksBody}</div>
     </div>
     ${securitySection}`;
+}
+
+function renderRightPanelManageView(conv) {
+  const gid = conv.id.replace('group:', '');
+  const g = state.groups.get(gid);
+  if (!g) { dom.rpContent.innerHTML = '<div class="rp-empty">Không có thông tin nhóm</div>'; return; }
+  const isOwner = g.createdBy === state.username;
+  const s = getGroupSettings(g);
+  const dis = isOwner ? '' : 'disabled';
+  const roCls = isOwner ? '' : ' readonly';
+
+  const chkRow = (key, label) => `
+    <label class="rp-manage-row${roCls}">
+      <span class="rp-manage-lbl">${escHtml(label)}</span>
+      <input type="checkbox" class="rp-manage-chk" ${s[key] ? 'checked' : ''} ${dis} onchange="toggleGroupSetting('${escHtml(gid)}','${key}',this.checked)">
+    </label>`;
+
+  const swRow = (key, label, hint) => `
+    <div class="rp-manage-row${roCls}">
+      <div class="rp-manage-lbl-wrap">
+        <span class="rp-manage-lbl">${escHtml(label)}</span>
+        <span class="rp-manage-help" title="${escHtml(hint)}">?</span>
+      </div>
+      <label class="rp-manage-switch">
+        <input type="checkbox" ${s[key] ? 'checked' : ''} ${dis} onchange="toggleGroupSetting('${escHtml(gid)}','${key}',this.checked)">
+        <span class="rp-manage-slider"></span>
+      </label>
+    </div>`;
+
+  dom.rpContent.innerHTML = `
+    ${!isOwner ? `<div class="rp-manage-lock-bar">${UI_ICONS.lock}<span>Tính năng chỉ dành cho quản trị viên</span></div>` : ''}
+    <div class="rp-manage-group">
+      <div class="rp-manage-title">Cho phép các thành viên trong nhóm:</div>
+      ${chkRow('allowEditInfo', 'Thay đổi tên & ảnh đại diện của nhóm')}
+      ${chkRow('allowPin', 'Ghim tin nhắn, ghi chú, bình chọn lên đầu hội thoại')}
+      ${chkRow('allowNotes', 'Tạo mới ghi chú, nhắc hẹn')}
+      ${chkRow('allowPolls', 'Tạo mới bình chọn')}
+      ${chkRow('allowSendMessage', 'Gửi tin nhắn')}
+    </div>
+    <div class="rp-manage-group">
+      ${swRow('requireApproval', 'Chế độ phê duyệt thành viên mới', 'Khi bật, chỉ trưởng nhóm được phép thêm thành viên mới vào nhóm')}
+      ${swRow('highlightOwnerMsg', 'Đánh dấu tin nhắn từ trưởng/phó nhóm', 'Hiển thị biểu tượng chìa khóa vàng trên tin nhắn của trưởng nhóm')}
+      ${swRow('allowNewMemberHistory', 'Cho phép thành viên mới đọc tin nhắn gần nhất', 'Thành viên vừa tham gia có thể xem các tin nhắn gần đây trong nhóm')}
+    </div>
+    <div class="rp-manage-group" style="padding-top:8px;padding-bottom:14px">
+      <button type="button" class="rp-opt-row" onclick="openRightPanelMembers()">${UI_ICONS.users}<span>Trưởng nhóm & thành viên (${(g.members || []).length})</span></button>
+      ${isOwner || s.allowEditInfo ? `<button type="button" class="rp-opt-row" onclick="openGroupEditInfoModal()">${UI_ICONS.edit}<span>Đổi tên & ảnh đại diện nhóm</span></button>` : ''}
+      ${isOwner ? `<button type="button" class="rp-opt-row" onclick="transferGroupOwner()">${UI_ICONS.crown}<span>Chuyển quyền trưởng nhóm</span></button>` : ''}
+      <button type="button" class="rp-opt-row danger" onclick="leaveGroup()">${UI_ICONS.logOut}<span>Rời nhóm</span></button>
+      ${isOwner ? `<button type="button" class="rp-opt-row danger" onclick="deleteGroup()">${UI_ICONS.trash}<span>Giải tán nhóm</span></button>` : ''}
+    </div>`;
+}
+
+function toggleProfilePageForChat(username) {
+  if (username) openProfilePage(username);
 }
 
 function renderRightPanelMembersView(conv) {
@@ -3093,7 +3470,7 @@ function openRightPanelMemberMenu(event, gid, targetUsername) {
   const menu = document.createElement('div');
   menu.className = 'avatar-action-popover';
   menu.innerHTML = `
-    <div class="avatar-popover-head">${userAvatarInner(targetUsername)}<span>${escHtml(targetUsername)}</span></div>
+    <div class="avatar-popover-head"><div class="conv-avatar" style="width:28px;height:28px;font-size:12px">${userAvatarInner(targetUsername)}</div><span>${escHtml(targetUsername)}</span></div>
     <button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();startChat('${escHtml(targetUsername)}')">
       ${UI_ICONS.chat}<span>Nhắn tin</span>
     </button>
@@ -3476,6 +3853,10 @@ function addGroupMember() {
   const gid = state.currentConvId?.replace('group:', '');
   const g = state.groups.get(gid);
   if (!g) return;
+  if (g.createdBy !== state.username && getGroupSettings(g).requireApproval) {
+    showToast('Nhóm đang bật chế độ phê duyệt thành viên mới — chỉ trưởng nhóm được thêm.', 'error');
+    return;
+  }
   const currentMembers = new Set(g.members || []);
   const allFriends = state.friends.slice();
 
@@ -3647,6 +4028,10 @@ function openGroupEditInfoModal() {
   const gid = state.currentConvId?.replace('group:', '');
   const g = state.groups.get(gid);
   if (!g) return;
+  if (g.createdBy !== state.username && getGroupSettings(g).allowEditInfo === false) {
+    showToast('Chỉ trưởng nhóm mới được thay đổi tên & ảnh đại diện nhóm.', 'error');
+    return;
+  }
   const avPreview = groupAvatarInner(gid, g.name);
   openGroupActionModal(
     'Đổi tên & Ảnh đại diện nhóm',
@@ -4049,9 +4434,34 @@ dom.passwordInput?.addEventListener('keydown', e => e.key === 'Enter' && login()
 
 dom.sendBtn?.addEventListener('click', sendMessage);
 dom.messageInput?.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  if (e.key === 'Backspace' && state.replyMention && dom.messageInput.selectionStart === 0 && dom.messageInput.selectionEnd === 0) {
+    e.preventDefault();
+    clearReplyMention();
+    return;
+  }
+  if (e.key === 'Escape' && $('mention-suggest-box')?.style.display !== 'none') {
+    e.preventDefault();
+    closeMentionBox();
+    return;
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    const box = $('mention-suggest-box');
+    const firstOpt = box && box.style.display !== 'none' ? box.querySelector('.zalo-mention-opt') : null;
+    if (firstOpt) {
+      e.preventDefault();
+      firstOpt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      return;
+    }
+    e.preventDefault();
+    sendMessage();
+  }
 });
-dom.messageInput?.addEventListener('input', () => { autoResize(dom.messageInput); handleTypingInput(); updateComposerActionBtn(); });
+dom.messageInput?.addEventListener('input', () => {
+  autoResize(dom.messageInput);
+  handleTypingInput();
+  updateComposerActionBtn();
+  handleMentionAutocomplete();
+});
 
 $('image-input')?.addEventListener('change', async e => {
   const files = [...(e.target.files || [])];
@@ -4131,11 +4541,15 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.message-reaction-area')) {
     document.querySelectorAll('.message-reaction-area.picker-open').forEach(el => el.classList.remove('picker-open'));
   }
+  if (!e.target.closest('#mention-suggest-box') && e.target !== dom.messageInput) {
+    closeMentionBox();
+  }
 });
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    closeMentionBox();
     document.querySelector('.reaction-people-overlay')?.remove();
     document.querySelector('.forward-overlay')?.remove();
     closeMessageMenu();
@@ -4166,7 +4580,7 @@ Object.assign(window, {
   markFileDownloaded, saveFileWithLocation,
   selectConversation, switchTab, switchContactsSubView, setContactsSearch, setContactsSort, toggleRpSection, toggleRpShowAll, enterSidebarSearch, exitSidebarSearch, openSearchConvTarget, clearRecentSearches, saveRecentSearch, openGroupModal, closeGroupModal, submitCreateGroup,
   logout, cancelSessionRestore, openImageViewer, openVideoViewer, closeImageViewer, showPanel,
-  toggleRightPanel, closeRightPanel, openRightPanelMembers, backToRightPanelInfo, openRightPanelMemberMenu, toggleUserMenu, closeUserMenu, switchRpTab,
+  toggleRightPanel, closeRightPanel, openRightPanelMembers, openRightPanelManage, backToRightPanelInfo, openRightPanelMemberMenu, toggleUserMenu, closeUserMenu, switchRpTab, toggleGroupSetting, togglePinConversation, toggleProfilePageForChat,
   toggleMsgSearch, closeMsgSearch, stepMsgSearch,
   openAddFriendModal, closeAddFriendModal, searchByPhone,
   sendFriendRequest, acceptFriendRequest, rejectFriendRequest, cancelFriendRequest,
@@ -4175,7 +4589,7 @@ Object.assign(window, {
   toggleAudioPlay, seekAudio,
   toggleRecording, stopAndSendRecording, cancelRecording,
   toggleEmojiPicker, closeEmojiPicker,
-  reactToMessage,revokeMessage,hideMessageForMe,showReactionPeople,replyToMessage,forwardMessage,filterForwardTargets,sendForwardedMessage,openConversationOptions,closeConversationOptions,
+  reactToMessage,revokeMessage,hideMessageForMe,showReactionPeople,replyToMessage,clearReply,clearReplyMention,selectMentionCandidate,forwardMessage,filterForwardTargets,sendForwardedMessage,openConversationOptions,closeConversationOptions,
   openMessageMenu,openMessageContextMenu,closeMessageMenu,copyMessageText,togglePinMessage,unpinCurrentMessage,jumpToMessage,toggleStarMessage,enterMultiSelectMode,exitMultiSelectMode,toggleSelectMessage,multiSelectCopy,multiSelectForward,multiSelectDeleteForMe,openMessageDetails,
   openProfilePage,closeProfilePage,openProfileEditView,closeProfileEditView,submitProfileEdit,editProfileBio,createProfilePost,uploadProfileAvatar,uploadProfileCover,clearProfileAvatar,clearProfileCover,openFriendReqModal,
   toggleBlockUser,showGroupMembers,filterGroupMembersModal,addGroupMember,filterGroupAddCandidates,submitAddGroupMembers,transferGroupOwner,selectTransferCandidate,filterTransferCandidates,confirmTransferGroupOwnerStep,confirmTransferGroupOwnerDirect,executeTransferGroupOwner,leaveGroup,deleteGroup,
