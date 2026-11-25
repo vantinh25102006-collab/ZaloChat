@@ -876,12 +876,22 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private void handleGroupTransferOwner(WebSocketSession session,JsonObject json)throws IOException{
         String me=requireAuth(session);if(me==null)return;String gid=getString(json,"groupId"),next=getString(json,"username");
+        boolean leaveAfter = json.has("leaveAfter") && !json.get("leaveAfter").isJsonNull() && json.get("leaveAfter").getAsBoolean();
         if(gid==null){sendError(session,"Thiếu groupId.");return;}
         Group g=groups.get(gid);if(g==null||!g.getCreatedBy().equals(me)){sendError(session,"Chỉ nhóm trưởng mới được chuyển quyền.");return;}
         if(next==null||!g.hasMember(next)||next.equals(me)){sendError(session,"Thành viên nhận quyền không hợp lệ.");return;}
         if(!db.transferGroupOwner(gid,me,next)){sendError(session,"Không thể chuyển quyền nhóm.");return;}
-        g.setCreatedBy(next);broadcastGroupUpdate(g);
+        g.setCreatedBy(next);
+        if(leaveAfter){
+            g.removeMember(me);
+            db.removeGroupMember(gid,me);
+            sendPayload(session,Map.of("type","group_left","groupId",gid));
+        }
+        broadcastGroupUpdate(g);
         sendGroupSystemNotification(g, me + " đã nhượng quyền trưởng nhóm cho " + next);
+        if(leaveAfter){
+            sendGroupSystemNotification(g, me + " đã rời nhóm");
+        }
     }
     private void handleGroupLeave(WebSocketSession session,JsonObject json)throws IOException{
         String me=requireAuth(session);if(me==null)return;String gid=getString(json,"groupId");
