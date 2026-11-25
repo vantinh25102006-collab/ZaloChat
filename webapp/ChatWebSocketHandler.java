@@ -35,6 +35,11 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     // username → WebSocketSession
     private final ConcurrentHashMap<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Object> userLocks = new ConcurrentHashMap<>();
+
+    private Object lockFor(String username) {
+        return userLocks.computeIfAbsent(username, k -> new Object());
+    }
 
     // groupId → Group (in-memory cache, backed by DB)
     private final ConcurrentHashMap<String, Group> groups = new ConcurrentHashMap<>();
@@ -81,8 +86,15 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         String username = getUsername(session);
-        if (username != null && sessions.remove(username, session)) {
-            presence.logout(username);
+        if (username == null) return;
+        boolean removed = false;
+        synchronized (lockFor(username)) {
+            if (sessions.remove(username, session)) {
+                presence.logout(username);
+                removed = true;
+            }
+        }
+        if (removed) {
             broadcastSystem(username + " đã đăng xuất.");
             broadcastUserList();
             System.out.println("[WS] Disconnected: " + username);
@@ -111,6 +123,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         switch (type) {
             case LOGIN               -> handleLogin(session, json);
+            case RESUME_SESSION      -> handleResumeSession(session, json);
             case REGISTER            -> handleRegister(session, json);
             case SEARCH_USERS        -> handleUserSearch(session, json);
             case SEARCH_BY_PHONE     -> handleSearchByPhone(session, json);
@@ -121,7 +134,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             case FILE_SHARE          -> handleFileShare(session, json);
             case HISTORY             -> handleHistoryRequest(session, json);
             case TYPING              -> handleTyping(session, json);
-            case DISCONNECT          -> handleDisconnect(session);
+            case DISCONNECT          -> handleDisconnect(session, json);
             case FRIEND_REQUEST      -> handleFriendRequest(session, json);
             case FRIEND_ACCEPT       -> handleFriendAccept(session, json);
             case FRIEND_REJECT       -> handleFriendReject(session, json);
@@ -178,18 +191,68 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             send(session, ChatMessage.loginResult(false, 0, "Username hoặc password không đúng."));
             return;
         }
-        if (!presence.login(username)) {
-            send(session, ChatMessage.loginResult(false, 0, "Tài khoản đang được đăng nhập ở nơi khác."));
-            return;
+        synchronized (lockFor(username)) {
+            if (!presence.login(username)) {
+                send(session, ChatMessage.loginResult(false, 0, "Tài khoản đang được đăng nhập ở nơi khác."));
+                return;
+            }
+            if (sessions.putIfAbsent(username, session) != null) {
+                presence.logout(username);
+                send(session, ChatMessage.loginResult(false, 0, "Tài khoản đang được đăng nhập ở nơi khác."));
+                return;
+            }
         }
-        if (sessions.putIfAbsent(username, session) != null) {
-            presence.logout(username);
-            send(session, ChatMessage.loginResult(false, 0, "Tài khoản đang được đăng nhập ở nơi khác."));
+
+        String token = db.createWebSession(username);
+        completeWebLogin(session, username, token, "Đăng nhập thành công. Chào " + username + "!", true);
+        System.out.println("[WS] Login: " + username);
+    }
+
+    private void handleResumeSession(WebSocketSession session, JsonObject json) throws IOException {
+        String token = getString(json, "sessionToken");
+        String username = db.validateAndTouchWebSession(token);
+        if (username == null || !userStore.exists(username)) {
+            send(session, ChatMessage.loginResult(false, 0, "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."));
             return;
         }
 
+        WebSocketSession replacedOld = null;
+        synchronized (lockFor(username)) {
+            WebSocketSession existingWs = sessions.get(username);
+            if (existingWs != null && existingWs != session) {
+                // Tách session cũ trước khi đóng để tránh afterConnectionClosed bắn nhầm sự kiện đăng xuất khi F5 nhanh
+                existingWs.getAttributes().remove("username");
+                sessions.put(username, session);
+                presence.login(username);
+                replacedOld = existingWs;
+            } else {
+                if (!presence.login(username)) {
+                    send(session, ChatMessage.loginResult(false, 0, "Tài khoản đang được đăng nhập ở nơi khác."));
+                    return;
+                }
+                if (existingWs == null) {
+                    sessions.put(username, session);
+                }
+            }
+        }
+        if (replacedOld != null) {
+            try {
+                if (replacedOld.isOpen()) replacedOld.close(CloseStatus.NORMAL.withReason("Session resumed"));
+            } catch (Exception ignored) { }
+        }
+
+        completeWebLogin(session, username, token, "Đã khôi phục phiên đăng nhập (" + username + ")", false);
+        System.out.println("[WS] Resume session: " + username);
+    }
+
+    private void completeWebLogin(WebSocketSession session, String username, String token, String message, boolean broadcastJoin) throws IOException {
         session.getAttributes().put("username", username);
-        send(session, ChatMessage.loginResult(true, 0, "Đăng nhập thành công. Chào " + username + "!"));
+        if (token != null) session.getAttributes().put("sessionToken", token);
+
+        ChatMessage result = ChatMessage.loginResult(true, 0, message);
+        result.setUsername(username);
+        result.setSessionToken(token);
+        send(session, result);
 
         sendUserList(session);
         sendGroupListFromDb(session, username);
@@ -198,15 +261,27 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         sendConversationList(session, username);
         sendBlockedUsers(session, username);
 
-        broadcastSystem(username + " đã tham gia.");
+        if (broadcastJoin) broadcastSystem(username + " đã tham gia.");
         broadcastUserList();
-        System.out.println("[WS] Login: " + username);
     }
 
-    private void handleDisconnect(WebSocketSession session) throws IOException {
+    private void handleDisconnect(WebSocketSession session, JsonObject json) throws IOException {
+        String token = (String) session.getAttributes().remove("sessionToken");
+        String explicitToken = getString(json, "sessionToken");
+        if (token != null) db.revokeWebSession(token);
+        if (explicitToken != null && !explicitToken.equals(token)) db.revokeWebSession(explicitToken);
+
         String username = getUsername(session);
-        if (username != null && sessions.remove(username, session)) {
-            presence.logout(username);
+        boolean removed = false;
+        if (username != null) {
+            synchronized (lockFor(username)) {
+                if (sessions.remove(username, session)) {
+                    presence.logout(username);
+                    removed = true;
+                }
+            }
+        }
+        if (removed) {
             broadcastSystem(username + " đã đăng xuất.");
             broadcastUserList();
             System.out.println("[WS] Logout: " + username);

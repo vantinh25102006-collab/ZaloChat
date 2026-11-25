@@ -23,6 +23,7 @@ public class DatabaseManager {
 
     private static DatabaseManager INSTANCE;
     private Connection conn;
+    private final java.security.SecureRandom sessionRandom = new java.security.SecureRandom();
 
     private DatabaseManager() throws SQLException {
         try {
@@ -164,6 +165,15 @@ public class DatabaseManager {
                     image_file_id TEXT, created_at TEXT NOT NULL
                 )
             """);
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS web_sessions (
+                    token TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_used_at TEXT NOT NULL
+                )
+            """);
+            st.execute("CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions(username)");
         }
     }
 
@@ -989,6 +999,153 @@ public class DatabaseManager {
             }
             return changed>0;
         }catch(SQLException e){System.err.println("[DB] deleteGroup: "+e.getMessage());return false;}
+    }
+
+    // ── Persistent Web Sessions ─────────────────────────────────────────
+    public synchronized String createWebSession(String username) {
+        if (username == null || username.isBlank()) return null;
+        byte[] raw = new byte[32];
+        sessionRandom.nextBytes(raw);
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+        String now = java.time.Instant.now().toString();
+        String cutoff = java.time.Instant.now().minus(java.time.Duration.ofDays(30)).toString();
+        try (PreparedStatement clean = conn.prepareStatement("DELETE FROM web_sessions WHERE last_used_at < ?")) {
+            clean.setString(1, cutoff);
+            clean.executeUpdate();
+        } catch (SQLException ignored) { }
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO web_sessions(token, username, created_at, last_used_at) VALUES(?,?,?,?)")) {
+            ps.setString(1, token);
+            ps.setString(2, username);
+            ps.setString(3, now);
+            ps.setString(4, now);
+            ps.executeUpdate();
+            return token;
+        } catch (SQLException e) {
+            System.err.println("[DB] createWebSession: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public synchronized String validateAndTouchWebSession(String token) {
+        if (token == null || token.isBlank()) return null;
+        try (PreparedStatement ps = conn.prepareStatement("SELECT username FROM web_sessions WHERE token=?")) {
+            ps.setString(1, token);
+            ResultSet rs = ps.executeQuery();
+            if (!rs.next()) return null;
+            String username = rs.getString(1);
+            try (PreparedStatement upd = conn.prepareStatement("UPDATE web_sessions SET last_used_at=? WHERE token=?")) {
+                upd.setString(1, java.time.Instant.now().toString());
+                upd.setString(2, token);
+                upd.executeUpdate();
+            }
+            return username;
+        } catch (SQLException e) {
+            System.err.println("[DB] validateAndTouchWebSession: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public synchronized void revokeWebSession(String token) {
+        if (token == null || token.isBlank()) return;
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM web_sessions WHERE token=?")) {
+            ps.setString(1, token);
+            ps.executeUpdate();
+        } catch (SQLException ignored) { }
+    }
+
+    // ── Pin & Star Messages ─────────────────────────────────────────────
+    public synchronized boolean pinMessage(String convId, String messageId, String pinnedBy) {
+        if (convId == null || messageId == null || pinnedBy == null) return false;
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT INTO pinned_messages(conv_id, message_id, pinned_by, pinned_at)
+            SELECT conv_id, id, ?, ? FROM messages WHERE id=? AND conv_id=? AND type<>'revoked'
+            ON CONFLICT(conv_id) DO UPDATE SET message_id=excluded.message_id, pinned_by=excluded.pinned_by, pinned_at=excluded.pinned_at
+        """)) {
+            ps.setString(1, pinnedBy);
+            ps.setString(2, java.time.Instant.now().toString());
+            ps.setString(3, messageId);
+            ps.setString(4, convId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("[DB] pinMessage: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized boolean unpinMessage(String convId) {
+        if (convId == null) return false;
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM pinned_messages WHERE conv_id=?")) {
+            ps.setString(1, convId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("[DB] unpinMessage: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized Map<String, Object> getPinnedMessage(String convId, String forUsername) {
+        if (convId == null) return null;
+        String sql = """
+            SELECT p.conv_id, p.message_id, p.pinned_by, p.pinned_at,
+                   m.sender, m.type, m.content, m.filename, m.mime_type
+            FROM pinned_messages p
+            JOIN messages m ON m.id = p.message_id
+            WHERE p.conv_id = ? AND m.type <> 'revoked'
+              AND NOT EXISTS (SELECT 1 FROM message_user_hidden h WHERE h.message_id = m.id AND h.username = ?)
+        """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, convId);
+            ps.setString(2, forUsername != null ? forUsername : "");
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("conversationId", rs.getString("conv_id"));
+                out.put("messageId", rs.getString("message_id"));
+                out.put("pinnedBy", rs.getString("pinned_by"));
+                out.put("pinnedAt", rs.getString("pinned_at"));
+                out.put("sender", rs.getString("sender"));
+                out.put("type", rs.getString("type"));
+                out.put("content", rs.getString("content"));
+                out.put("filename", rs.getString("filename"));
+                out.put("mimeType", rs.getString("mime_type"));
+                return out;
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB] getPinnedMessage: " + e.getMessage());
+        }
+        return null;
+    }
+
+    public synchronized boolean toggleStarMessage(String username, String messageId, String convId) {
+        if (username == null || messageId == null || convId == null) return false;
+        try (PreparedStatement chk = conn.prepareStatement("SELECT 1 FROM starred_messages WHERE username=? AND message_id=?")) {
+            chk.setString(1, username);
+            chk.setString(2, messageId);
+            if (chk.executeQuery().next()) {
+                try (PreparedStatement del = conn.prepareStatement("DELETE FROM starred_messages WHERE username=? AND message_id=?")) {
+                    del.setString(1, username);
+                    del.setString(2, messageId);
+                    del.executeUpdate();
+                }
+                return false;
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB] toggleStarMessage check: " + e.getMessage());
+            return false;
+        }
+        try (PreparedStatement ins = conn.prepareStatement(
+                "INSERT INTO starred_messages(username, message_id, conv_id, created_at) VALUES(?,?,?,?)")) {
+            ins.setString(1, username);
+            ins.setString(2, messageId);
+            ins.setString(3, convId);
+            ins.setString(4, java.time.Instant.now().toString());
+            ins.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            System.err.println("[DB] toggleStarMessage insert: " + e.getMessage());
+            return false;
+        }
     }
 
     public Connection getConnection() { return conn; }
