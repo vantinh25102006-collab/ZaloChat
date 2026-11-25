@@ -145,6 +145,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             case REACT_MESSAGE       -> handleReactMessage(session, json);
             case REVOKE_MESSAGE      -> handleRevokeMessage(session, json);
             case DELETE_MESSAGE_FOR_ME -> handleDeleteMessageForMe(session, json);
+            case PIN_MESSAGE         -> handlePinMessage(session, json);
+            case UNPIN_MESSAGE       -> handleUnpinMessage(session, json);
+            case TOGGLE_STAR_MESSAGE -> handleToggleStarMessage(session, json);
             case DELETE_CONVERSATION -> handleDeleteConversation(session, json);
             case MARK_READ           -> handleMarkRead(session, json);
             case MUTE_CONVERSATION   -> handleMuteConversation(session, json);
@@ -504,14 +507,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         // Load from DB first
         List<Map<String, Object>> dbMessages = db.getMessagesForUser(convId, 300, username);
-
-        // Merge with in-memory
-        ChatMessage response = new ChatMessage();
-        response.setType(MessageType.HISTORY);
-        response.setConversationId(convId);
-        response.setMessages(new ArrayList<>(dbMessages));
-        response.setTimestamp(java.time.Instant.now().toString());
-        send(session, response);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("type", "history");
+        response.put("conversationId", convId);
+        response.put("messages", new ArrayList<>(dbMessages));
+        response.put("pinnedMessage", db.getPinnedMessage(convId, username));
+        response.put("timestamp", java.time.Instant.now().toString());
+        sendPayload(session, response);
     }
 
     private void handleTyping(WebSocketSession session, JsonObject json) throws IOException {
@@ -797,8 +799,46 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         String me=requireAuth(session);if(me==null)return;
         String id=getString(json,"messageId"),conv=getString(json,"conversationId");
         if(id==null||conv==null||!canAccessConversation(me,conv)||!db.messageBelongsToConversation(id,conv)){sendError(session,"Tin nhắn không hợp lệ.");return;}
-        if(!db.hideMessageForUser(id,me)){sendError(session,"Chỉ có thể xóa tin nhắn do chính bạn gửi ở phía mình.");return;}
+        if(!db.hideMessageForUser(id,me)){sendError(session,"Không thể xóa tin nhắn này ở phía bạn.");return;}
         sendPayload(session,Map.of("type","message_hidden","messageId",id,"conversationId",conv));
+    }
+
+    private void handlePinMessage(WebSocketSession session, JsonObject json) throws IOException {
+        String me = requireAuth(session); if (me == null) return;
+        String id = getString(json, "messageId"), conv = getString(json, "conversationId");
+        if (id == null || conv == null || !canAccessConversation(me, conv) || !db.messageBelongsToConversation(id, conv)) {
+            sendError(session, "Không thể ghim tin nhắn này."); return;
+        }
+        if (!db.pinMessage(conv, id, me)) { sendError(session, "Tin nhắn đã thu hồi hoặc không thể ghim."); return; }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "message_pinned");
+        payload.put("conversationId", conv);
+        payload.put("pinnedMessage", db.getPinnedMessage(conv, me));
+        broadcastConversation(conv, payload);
+    }
+
+    private void handleUnpinMessage(WebSocketSession session, JsonObject json) throws IOException {
+        String me = requireAuth(session); if (me == null) return;
+        String conv = getString(json, "conversationId");
+        if (conv == null || !canAccessConversation(me, conv)) {
+            sendError(session, "Cuộc trò chuyện không hợp lệ."); return;
+        }
+        db.unpinMessage(conv);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "message_pinned");
+        payload.put("conversationId", conv);
+        payload.put("pinnedMessage", null);
+        broadcastConversation(conv, payload);
+    }
+
+    private void handleToggleStarMessage(WebSocketSession session, JsonObject json) throws IOException {
+        String me = requireAuth(session); if (me == null) return;
+        String id = getString(json, "messageId"), conv = getString(json, "conversationId");
+        if (id == null || conv == null || !canAccessConversation(me, conv) || !db.messageBelongsToConversation(id, conv)) {
+            sendError(session, "Tin nhắn không hợp lệ."); return;
+        }
+        boolean starred = db.toggleStarMessage(me, id, conv);
+        sendPayload(session, Map.of("type", "message_starred", "conversationId", conv, "messageId", id, "starred", starred));
     }
 
     private void handleDeleteConversation(WebSocketSession session,JsonObject json)throws IOException{

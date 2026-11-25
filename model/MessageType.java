@@ -63,5 +63,10 @@ public enum MessageType {
     @SerializedName("message_hidden") MESSAGE_HIDDEN,
     @SerializedName("conversation_list") CONVERSATION_LIST,
     @SerializedName("blocked_users") BLOCKED_USERS,
-    @SerializedName("resume_session") RESUME_SESSION
+    @SerializedName("resume_session") RESUME_SESSION,
+    @SerializedName("pin_message") PIN_MESSAGE,
+    @SerializedName("unpin_message") UNPIN_MESSAGE,
+    @SerializedName("message_pinned") MESSAGE_PINNED,
+    @SerializedName("toggle_star_message") TOGGLE_STAR_MESSAGE,
+    @SerializedName("message_starred") MESSAGE_STARRED
 }

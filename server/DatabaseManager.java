@@ -174,6 +174,23 @@ public class DatabaseManager {
                 )
             """);
             st.execute("CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions(username)");
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS pinned_messages (
+                    conv_id TEXT PRIMARY KEY,
+                    message_id TEXT NOT NULL,
+                    pinned_by TEXT NOT NULL,
+                    pinned_at TEXT NOT NULL
+                )
+            """);
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS starred_messages (
+                    username TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    conv_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(username, message_id)
+                )
+            """);
         }
     }
 
@@ -633,8 +650,8 @@ public class DatabaseManager {
     public synchronized boolean hideMessageForUser(String messageId,String username) {
         try(PreparedStatement ps=conn.prepareStatement("""
             INSERT OR IGNORE INTO message_user_hidden(message_id,username)
-            SELECT id,? FROM messages WHERE id=? AND sender=?
-        """)){ps.setString(1,username);ps.setString(2,messageId);ps.setString(3,username);return ps.executeUpdate()>0;}
+            SELECT id,? FROM messages WHERE id=?
+        """)){ps.setString(1,username);ps.setString(2,messageId);return ps.executeUpdate()>0;}
         catch(SQLException e){System.err.println("[DB] hideMessageForUser: "+e.getMessage());return false;}
     }
 
@@ -671,6 +688,14 @@ public class DatabaseManager {
                     del.setString(1, messageId);
                     del.executeUpdate();
                 }
+                try (PreparedStatement delPin = conn.prepareStatement("DELETE FROM pinned_messages WHERE message_id=?")) {
+                    delPin.setString(1, messageId);
+                    delPin.executeUpdate();
+                }
+                try (PreparedStatement delStar = conn.prepareStatement("DELETE FROM starred_messages WHERE message_id=?")) {
+                    delStar.setString(1, messageId);
+                    delStar.executeUpdate();
+                }
                 String orphanFileId = null;
                 if (oldFileId != null && !oldFileId.isBlank()) {
                     boolean stillReferenced = false;
@@ -702,7 +727,8 @@ public class DatabaseManager {
 
     public synchronized List<Map<String,Object>> getMessagesForUser(String convId, int limit, String username) {
         String sql = """
-            SELECT id, conv_id, sender, receiver, type, content, file_id, filename, file_size, mime_type, created_at, reply_to_id, reply_to_username, reply_to_content
+            SELECT id, conv_id, sender, receiver, type, content, file_id, filename, file_size, mime_type, created_at, reply_to_id, reply_to_username, reply_to_content,
+                   EXISTS(SELECT 1 FROM starred_messages sm WHERE sm.message_id=m.id AND sm.username=?) AS is_starred
             FROM messages m WHERE conv_id = ? AND created_at > COALESCE(
               (SELECT deleted_at FROM conversation_user_state s WHERE s.username=? AND s.conv_id=m.conv_id),''
             ) AND NOT EXISTS (SELECT 1 FROM message_user_hidden h WHERE h.message_id=m.id AND h.username=?)
@@ -710,7 +736,7 @@ public class DatabaseManager {
         """;
         List<Map<String,Object>> result=new ArrayList<>();
         try(PreparedStatement ps=conn.prepareStatement(sql)){
-            ps.setString(1,convId);ps.setString(2,username);ps.setString(3,username);ps.setInt(4,limit);
+            ps.setString(1,username);ps.setString(2,convId);ps.setString(3,username);ps.setString(4,username);ps.setInt(5,limit);
             ResultSet rs=ps.executeQuery();
             while(rs.next()){
                 Map<String,Object> m=new LinkedHashMap<>();
@@ -719,7 +745,7 @@ public class DatabaseManager {
                 m.put("type",rs.getString("type"));m.put("content",rs.getString("content"));
                 m.put("fileId",rs.getString("file_id"));m.put("filename",rs.getString("filename"));
                 m.put("fileSize",rs.getString("file_size"));m.put("mimeType",rs.getString("mime_type"));
-                m.put("timestamp",rs.getString("created_at"));m.put("replyToId",rs.getString("reply_to_id"));m.put("replyToUsername",rs.getString("reply_to_username"));m.put("replyToContent",rs.getString("reply_to_content"));m.put("reactions",getReactions(rs.getString("id")));
+                m.put("timestamp",rs.getString("created_at"));m.put("replyToId",rs.getString("reply_to_id"));m.put("replyToUsername",rs.getString("reply_to_username"));m.put("replyToContent",rs.getString("reply_to_content"));m.put("starred",rs.getInt("is_starred")==1);m.put("reactions",getReactions(rs.getString("id")));
                 result.add(m);
             }
         }catch(SQLException e){System.err.println("[DB] getMessagesForUser: "+e.getMessage());}
@@ -994,6 +1020,8 @@ public class DatabaseManager {
                 String conv="group:"+groupId;
                 try(PreparedStatement p1=conn.prepareStatement("DELETE FROM message_reactions WHERE message_id IN (SELECT id FROM messages WHERE conv_id=?)")){p1.setString(1,conv);p1.executeUpdate();}
                 try(PreparedStatement p2=conn.prepareStatement("DELETE FROM message_user_hidden WHERE message_id IN (SELECT id FROM messages WHERE conv_id=?)")){p2.setString(1,conv);p2.executeUpdate();}
+                try(PreparedStatement pStar=conn.prepareStatement("DELETE FROM starred_messages WHERE conv_id=?")){pStar.setString(1,conv);pStar.executeUpdate();}
+                try(PreparedStatement pPin=conn.prepareStatement("DELETE FROM pinned_messages WHERE conv_id=?")){pPin.setString(1,conv);pPin.executeUpdate();}
                 try(PreparedStatement p3=conn.prepareStatement("DELETE FROM messages WHERE conv_id=?")){p3.setString(1,conv);p3.executeUpdate();}
                 try(PreparedStatement p4=conn.prepareStatement("DELETE FROM conversation_user_state WHERE conv_id=?")){p4.setString(1,conv);p4.executeUpdate();}
             }
