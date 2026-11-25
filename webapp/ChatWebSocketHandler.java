@@ -162,6 +162,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             case GROUP_TRANSFER_OWNER -> handleGroupTransferOwner(session, json);
             case GROUP_LEAVE         -> handleGroupLeave(session, json);
             case GROUP_DELETE        -> handleGroupDelete(session, json);
+            case GROUP_UPDATE_SETTINGS -> handleGroupUpdateSettings(session, json);
             default                  -> sendError(session, "Loại thông điệp không được hỗ trợ: " + typeStr);
         }
     }
@@ -437,6 +438,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         Group group = groups.get(groupId);
         if (group == null) { sendError(session, "Nhóm không tồn tại."); return; }
         if (!group.hasMember(from)) { sendError(session, "Bạn không phải thành viên nhóm này."); return; }
+        if (!group.getSetting("allowSendMessage", true) && !group.getCreatedBy().equals(from)) {
+            sendError(session, "Chỉ trưởng nhóm mới được gửi tin nhắn lúc này."); return;
+        }
 
         ChatMessage msg = ChatMessage.groupMessage(from, groupId, group.getName(), content);
 
@@ -469,6 +473,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (groupId != null && !groupId.isBlank()) {
             Group group = groups.get(groupId);
             if (group == null) { sendError(session, "Nhóm không tồn tại."); return; }
+            if (!group.hasMember(from)) { sendError(session, "Bạn không phải thành viên nhóm này."); return; }
+            if (!group.getSetting("allowSendMessage", true) && !group.getCreatedBy().equals(from)) {
+                sendError(session, "Chỉ trưởng nhóm mới được gửi tệp lúc này."); return;
+            }
             db.saveMessage(msg.getMessageId(), "group:" + groupId, from, null, "file_share", null, fileId, filename, fileSize, mimeType);
             addHistory("group:" + groupId, msg);
             for (String member : group.getMembers()) {
@@ -476,6 +484,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 if (ms != null && ms.isOpen()) send(ms, msg);
             }
         } else if (to != null && !to.isBlank()) {
+            if (db.isBlockedEitherWay(from, to)) { sendError(session, "Không thể chia sẻ tệp do một trong hai người đã chặn người còn lại."); return; }
             db.saveMessage(msg.getMessageId(), msg.getConversationId(), from, to, "file_share", null, fileId, filename, fileSize, mimeType);
             addHistory(msg.getConversationId(), msg);
             WebSocketSession toSession = sessions.get(to);
@@ -809,6 +818,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (id == null || conv == null || !canAccessConversation(me, conv) || !db.messageBelongsToConversation(id, conv)) {
             sendError(session, "Không thể ghim tin nhắn này."); return;
         }
+        if (conv.startsWith("group:")) {
+            Group g = groups.get(conv.replace("group:", ""));
+            if (g != null && !g.getSetting("allowPin", true) && !g.getCreatedBy().equals(me)) {
+                sendError(session, "Chỉ trưởng nhóm mới được phép ghim tin nhắn."); return;
+            }
+        }
         if (!db.pinMessage(conv, id, me)) { sendError(session, "Tin nhắn đã thu hồi hoặc không thể ghim."); return; }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "message_pinned");
@@ -822,6 +837,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         String conv = getString(json, "conversationId");
         if (conv == null || !canAccessConversation(me, conv)) {
             sendError(session, "Cuộc trò chuyện không hợp lệ."); return;
+        }
+        if (conv.startsWith("group:")) {
+            Group g = groups.get(conv.replace("group:", ""));
+            if (g != null && !g.getSetting("allowPin", true) && !g.getCreatedBy().equals(me)) {
+                sendError(session, "Chỉ trưởng nhóm mới được phép bỏ ghim."); return;
+            }
         }
         db.unpinMessage(conv);
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -919,6 +940,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if(gid==null){sendError(session,"Thiếu groupId.");return;}
         Group g=groups.get(gid);
         if(g==null||!g.hasMember(me)){sendError(session,"Bạn không phải thành viên của nhóm này.");return;}
+        if(g.getSetting("requireApproval", false) && !g.getCreatedBy().equals(me)) {
+            sendError(session,"Nhóm đang bật phê duyệt thành viên mới — chỉ trưởng nhóm mới được thêm."); return;
+        }
 
         List<String> toAdd = new ArrayList<>();
         if (json.has("usernames") && json.get("usernames").isJsonArray()) {
@@ -967,6 +991,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (gid == null) { sendError(session, "Thiếu groupId."); return; }
         Group g = groups.get(gid);
         if (g == null || !g.hasMember(me)) { sendError(session, "Bạn không thuộc nhóm này."); return; }
+        if (!g.getSetting("allowEditInfo", true) && !g.getCreatedBy().equals(me)) {
+            sendError(session, "Chỉ trưởng nhóm mới được thay đổi tên và ảnh đại diện nhóm."); return;
+        }
 
         String newName = getString(json, "name");
         String newAvatar = getString(json, "avatarPath");
@@ -1024,6 +1051,27 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if(!db.deleteGroup(gid,me)){sendError(session,"Không thể giải tán nhóm.");return;}
         groups.remove(gid);Map<String,Object> p=Map.of("type","group_deleted","groupId",gid);
         for(String member:g.getMembers()){WebSocketSession s=sessions.get(member);if(s!=null&&s.isOpen())sendPayload(s,p);}
+    }
+
+    private void handleGroupUpdateSettings(WebSocketSession session, JsonObject json) throws IOException {
+        String me = requireAuth(session); if (me == null) return;
+        String gid = getString(json, "groupId");
+        if (gid == null) { sendError(session, "Thiếu groupId."); return; }
+        Group g = groups.get(gid);
+        if (g == null || !g.hasMember(me)) { sendError(session, "Nhóm không tồn tại."); return; }
+        if (!g.getCreatedBy().equals(me)) { sendError(session, "Tính năng chỉ dành cho quản trị viên."); return; }
+        JsonObject sObj = (json.has("settings") && json.get("settings").isJsonObject())
+                ? json.getAsJsonObject("settings") : null;
+        if (sObj == null) { sendError(session, "Thiếu cấu hình cài đặt."); return; }
+        Map<String, Boolean> updates = new LinkedHashMap<>();
+        for (String key : Group.SETTING_KEYS) {
+            if (sObj.has(key) && sObj.get(key).isJsonPrimitive() && sObj.get(key).getAsJsonPrimitive().isBoolean()) {
+                updates.put(key, sObj.get(key).getAsBoolean());
+            }
+        }
+        g.applySettings(updates);
+        db.updateGroupSettings(gid, gson.toJson(g.getSettings()));
+        broadcastGroupUpdate(g);
     }
     private boolean canAccessConversation(String user,String conv){
         if(conv.startsWith("dm:"))return Arrays.asList(conv.substring(3).split(":")).contains(user);
@@ -1150,13 +1198,22 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         for (Map<String, Object> g : dbGroups) {
             String gid = (String) g.get("id");
             String av = (String) g.get("avatarPath");
+            String settingsJson = (String) g.get("settingsJson");
+            Map<String, Boolean> parsedSettings = null;
+            if (settingsJson != null && !settingsJson.isBlank()) {
+                try {
+                    java.lang.reflect.Type mapType = new com.google.gson.reflect.TypeToken<Map<String, Boolean>>() {}.getType();
+                    parsedSettings = gson.fromJson(settingsJson, mapType);
+                } catch (Exception ignored) { }
+            }
             if (!groups.containsKey(gid)) {
                 @SuppressWarnings("unchecked")
                 List<String> members = (List<String>) g.get("members");
-                Group group = new Group(gid, (String)g.get("name"), (String)g.get("createdBy"), members, av);
+                Group group = new Group(gid, (String)g.get("name"), (String)g.get("createdBy"), members, av, parsedSettings);
                 groups.put(gid, group);
-            } else if (av != null) {
-                groups.get(gid).setAvatarPath(av);
+            } else {
+                if (av != null) groups.get(gid).setAvatarPath(av);
+                if (parsedSettings != null) groups.get(gid).applySettings(parsedSettings);
             }
         }
 

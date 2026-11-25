@@ -59,6 +59,7 @@ public enum MessageType {
     @SerializedName("group_transfer_owner") GROUP_TRANSFER_OWNER,
     @SerializedName("group_leave")      GROUP_LEAVE,
     @SerializedName("group_delete")     GROUP_DELETE,
+    @SerializedName("group_update_settings") GROUP_UPDATE_SETTINGS,
     @SerializedName("delete_message_for_me") DELETE_MESSAGE_FOR_ME,
     @SerializedName("message_hidden") MESSAGE_HIDDEN,
     @SerializedName("conversation_list") CONVERSATION_LIST,

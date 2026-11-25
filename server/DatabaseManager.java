@@ -111,10 +111,12 @@ public class DatabaseManager {
                     created_by  TEXT NOT NULL,
                     created_at  TEXT NOT NULL,
                     folder_path TEXT,
-                    avatar_path TEXT
+                    avatar_path TEXT,
+                    settings_json TEXT
                 )
             """);
             try { st.execute("ALTER TABLE groups ADD COLUMN avatar_path TEXT"); } catch (SQLException ignored) { }
+            try { st.execute("ALTER TABLE groups ADD COLUMN settings_json TEXT"); } catch (SQLException ignored) { }
 
             // Group members
             st.execute("""
@@ -538,7 +540,7 @@ public class DatabaseManager {
 
     public synchronized List<Map<String, Object>> getGroupsForUser(String username) {
         String sql = """
-            SELECT g.id, g.name, g.created_by, g.created_at, g.folder_path, g.avatar_path,
+            SELECT g.id, g.name, g.created_by, g.created_at, g.folder_path, g.avatar_path, g.settings_json,
                    GROUP_CONCAT(gm2.username) as members
             FROM groups g
             JOIN group_members gm ON g.id = gm.group_id AND gm.username = ?
@@ -555,6 +557,7 @@ public class DatabaseManager {
                 g.put("name", rs.getString("name"));
                 g.put("createdBy", rs.getString("created_by"));
                 g.put("avatarPath", rs.getString("avatar_path"));
+                g.put("settingsJson", rs.getString("settings_json"));
                 String members = rs.getString("members");
                 g.put("members", members != null ? List.of(members.split(",")) : List.of());
                 g.put("conversationDeleted", isConversationDeletedForUser(username,"group:"+rs.getString("id")));
@@ -564,6 +567,17 @@ public class DatabaseManager {
             System.err.println("[DB] getGroupsForUser error: " + e.getMessage());
         }
         return result;
+    }
+
+    public synchronized boolean updateGroupSettings(String groupId, String settingsJson) {
+        try (PreparedStatement ps = conn.prepareStatement("UPDATE groups SET settings_json=? WHERE id=?")) {
+            ps.setString(1, settingsJson);
+            ps.setString(2, groupId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("[DB] updateGroupSettings error: " + e.getMessage());
+            return false;
+        }
     }
 
     public synchronized String updateGroupInfo(String groupId, String newName, String newAvatarPath) {
