@@ -9,6 +9,11 @@
     - Video: `[người gửi]: đã gửi 1 video.`
     - Âm thanh / Ghi âm: `[người gửi]: đã gửi 1 tệp âm thanh.`
   - Đổi tên tab **"Ảnh"** ở bảng thông tin cuộc trò chuyện bên phải thành **"Ảnh và video"**, đồng thời đưa toàn bộ các video được gửi vào mục này (tách khỏi mục File).
+- **Điều hướng Trái / Phải khi xem Ảnh và Video trong trình xem phóng to (`#image-viewer`):**
+  - Hiển thị 2 nút mũi tên **Trái (`‹`)** và **Phải (`›`)** ở hai bên màn hình trình xem ảnh/video (kèm hỗ trợ phím mũi tên `←` / `→` trên bàn phím và hiển thị thứ tự `1/N`) để chuyển mượt qua lại giữa ảnh hoặc video trước đó / kế tiếp trong kho **Ảnh và video** của cuộc trò chuyện.
+  - Khi đã di chuyển đến ảnh/video đầu tiên hoặc cuối cùng ở hướng nào thì nút mũi tên ở hướng đó sẽ bị làm mờ và vô hiệu hóa (`disabled`), không cho bấm tiếp.
+
+
 
 
 

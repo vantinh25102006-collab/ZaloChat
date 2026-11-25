@@ -31,9 +31,12 @@ public class DatabaseManager {
             throw new SQLException("Cannot create data directory", e);
         }
         conn = DriverManager.getConnection("jdbc:sqlite:" + DB_PATH.toString());
-        // Enable WAL for better concurrency
+        // Dùng journal_mode=DELETE (hoặc checkpoint ngay) để dữ liệu ghi thẳng vào data/zchat.db,
+        // giúp mở zchat.db trên các trình xem SQLite (VS Code / DB Browser) thấy ngay dữ liệu mới.
         try (Statement st = conn.createStatement()) {
-            st.execute("PRAGMA journal_mode=WAL");
+            st.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+            st.execute("PRAGMA journal_mode=DELETE");
+            st.execute("PRAGMA synchronous=NORMAL");
             st.execute("PRAGMA foreign_keys=ON");
         }
         initSchema();

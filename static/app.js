@@ -2499,45 +2499,112 @@ async function uploadProfileAvatar(file){
   catch(e){showToast(e.message,'error');}
 }
 
-function openImageViewer(url, filename = '') {
+function getConversationMediaItems() {
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv || !conv.messages) return [];
+  // Sắp xếp cùng thứ tự hiển thị với kho Ảnh và video (mới nhất trước, hoặc theo danh sách kho)
+  return conv.messages
+    .filter(m => m.fileId && ((m.mimeType || '').startsWith('image/') || (m.mimeType || '').startsWith('video/')))
+    .slice()
+    .reverse()
+    .map(m => ({
+      url: `/api/files/${encodeURIComponent(m.fileId)}`,
+      filename: m.filename || ((m.mimeType || '').startsWith('video/') ? 'video.mp4' : 'image'),
+      isVideo: (m.mimeType || '').startsWith('video/'),
+      sender: m.from || m.username || '',
+      timestamp: m.timestamp || '',
+    }));
+}
+
+function renderMediaViewerAtIndex(index) {
+  const list = state.mediaViewerList || [];
+  if (!list.length) return;
+  const total = list.length;
+  if (index < 0 || index >= total) return;
+  state.mediaViewerIndex = index;
+  const item = list[state.mediaViewerIndex];
+
   const overlay = $('image-viewer');
   const img = $('image-viewer-img');
   const cap = $('image-viewer-caption');
+  const prevBtn = $('image-viewer-prev');
+  const nextBtn = $('image-viewer-next');
   if (!overlay || !img) return;
-  const oldVid = $('image-viewer-video');
-  if (oldVid) { oldVid.pause(); oldVid.remove(); }
-  img.style.display = 'block';
-  img.src = url;
+
+  if (prevBtn) {
+    prevBtn.style.display = 'flex';
+    prevBtn.disabled = state.mediaViewerIndex <= 0;
+  }
+  if (nextBtn) {
+    nextBtn.style.display = 'flex';
+    nextBtn.disabled = state.mediaViewerIndex >= total - 1;
+  }
+
+  let vid = $('image-viewer-video');
+  if (item.isVideo) {
+    img.style.display = 'none';
+    img.src = '';
+    if (!vid) {
+      vid = document.createElement('video');
+      vid.id = 'image-viewer-video';
+      vid.controls = true;
+      vid.autoplay = true;
+      vid.playsInline = true;
+      vid.style.cssText = 'max-width:min(90vw,1180px);max-height:78vh;border-radius:10px;background:#000;box-shadow:0 12px 50px rgba(0,0,0,.5)';
+      img.insertAdjacentElement('afterend', vid);
+    }
+    vid.src = item.url;
+  } else {
+    if (vid) { vid.pause(); vid.remove(); }
+    img.style.display = 'block';
+    img.src = item.url;
+  }
+
   const dl = $('image-viewer-download');
-  if (dl) { dl.href = url; dl.download = filename || 'image'; }
-  if (cap) cap.textContent = filename || '';
+  if (dl) { dl.href = item.url; dl.download = item.filename; }
+  if (cap) {
+    const metaParts = [];
+    metaParts.push(`[${state.mediaViewerIndex + 1}/${total}]`);
+    if (item.filename) metaParts.push(item.filename);
+    if (item.sender) metaParts.push(`Người gửi: ${item.sender}`);
+    if (item.timestamp) metaParts.push(formatDateTimeFull(item.timestamp));
+    cap.textContent = metaParts.join(' · ');
+  }
   overlay.classList.add('visible');
   document.body.style.overflow = 'hidden';
 }
 
-function openVideoViewer(url, filename = 'video.mp4') {
-  const overlay = $('image-viewer');
-  const img = $('image-viewer-img');
-  const cap = $('image-viewer-caption');
-  if (!overlay || !img) return;
-  img.style.display = 'none';
-  img.src = '';
-  let vid = $('image-viewer-video');
-  if (!vid) {
-    vid = document.createElement('video');
-    vid.id = 'image-viewer-video';
-    vid.controls = true;
-    vid.autoplay = true;
-    vid.playsInline = true;
-    vid.style.cssText = 'max-width:min(94vw,1200px);max-height:80vh;border-radius:10px;background:#000;box-shadow:0 12px 50px rgba(0,0,0,.5)';
-    img.insertAdjacentElement('afterend', vid);
+function stepMediaViewer(delta) {
+  try { window.getSelection()?.removeAllRanges(); } catch (_) {}
+  const list = state.mediaViewerList || [];
+  if (!list.length) return;
+  const nextIdx = (state.mediaViewerIndex || 0) + delta;
+  if (nextIdx < 0 || nextIdx >= list.length) return;
+  renderMediaViewerAtIndex(nextIdx);
+}
+
+function openImageViewer(url, filename = '') {
+  const list = getConversationMediaItems();
+  const idx = list.findIndex(x => x.url === url);
+  if (idx !== -1) {
+    state.mediaViewerList = list;
+    renderMediaViewerAtIndex(idx);
+  } else {
+    state.mediaViewerList = [{ url, filename: filename || 'image', isVideo: false, sender: '', timestamp: '' }];
+    renderMediaViewerAtIndex(0);
   }
-  vid.src = url;
-  const dl = $('image-viewer-download');
-  if (dl) { dl.href = url; dl.download = filename || 'video.mp4'; }
-  if (cap) cap.textContent = filename || '';
-  overlay.classList.add('visible');
-  document.body.style.overflow = 'hidden';
+}
+
+function openVideoViewer(url, filename = 'video.mp4') {
+  const list = getConversationMediaItems();
+  const idx = list.findIndex(x => x.url === url);
+  if (idx !== -1) {
+    state.mediaViewerList = list;
+    renderMediaViewerAtIndex(idx);
+  } else {
+    state.mediaViewerList = [{ url, filename: filename || 'video.mp4', isVideo: true, sender: '', timestamp: '' }];
+    renderMediaViewerAtIndex(0);
+  }
 }
 
 function closeImageViewer() {
@@ -2546,6 +2613,8 @@ function closeImageViewer() {
   if (img) { img.src = ''; img.style.display = 'block'; }
   const vid = $('image-viewer-video');
   if (vid) { vid.pause(); vid.remove(); }
+  state.mediaViewerList = [];
+  state.mediaViewerIndex = 0;
   document.body.style.overflow = '';
 }
 
@@ -2694,6 +2763,10 @@ document.addEventListener('click', e => {
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
+  if ($('image-viewer')?.classList.contains('visible')) {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); stepMediaViewer(-1); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); stepMediaViewer(1); return; }
+  }
   if (e.key === 'Escape') {
     document.querySelector('.reaction-people-overlay')?.remove();
     document.querySelector('.forward-overlay')?.remove();
@@ -2722,7 +2795,7 @@ function closeFriendReqModal() { $('freq-modal-overlay')?.classList.remove('visi
 Object.assign(window, {
   markFileDownloaded, saveFileWithLocation,
   selectConversation, switchTab, openGroupModal, closeGroupModal, submitCreateGroup,
-  logout, openImageViewer, openVideoViewer, closeImageViewer, showPanel,
+  logout, openImageViewer, openVideoViewer, closeImageViewer, stepMediaViewer, showPanel,
   toggleRightPanel, closeRightPanel, switchRpTab,
   toggleMsgSearch, closeMsgSearch, stepMsgSearch,
   openAddFriendModal, closeAddFriendModal, searchByPhone,
