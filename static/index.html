@@ -3739,7 +3739,7 @@
   </div>
   <div id="image-viewer" onclick="if(event.target===this)closeImageViewer()">
     <button id="image-viewer-close" onclick="closeImageViewer()" aria-label="Đóng">×</button>
-    <a id="image-viewer-download" href="#" download="image" title="Tải ảnh">
+    <a id="image-viewer-download" href="#" download="image" title="Tải xuống">
       <svg viewBox="0 0 24 24"
         style="width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -3747,6 +3747,12 @@
         <line x1="12" y1="15" x2="12" y2="3" />
       </svg>
     </a>
+    <button type="button" class="media-viewer-nav prev" id="image-viewer-prev" title="Trước đó (←)" onclick="event.stopPropagation();stepMediaViewer(-1)">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <button type="button" class="media-viewer-nav next" id="image-viewer-next" title="Kế tiếp (→)" onclick="event.stopPropagation();stepMediaViewer(1)">
+      <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
     <img id="image-viewer-img" alt="Ảnh phóng to">
     <div id="image-viewer-caption"></div>
   </div>
@@ -8811,6 +8817,18 @@
       color: #758398;
       cursor: not-allowed
     }
+
+    /* Điều hướng Trái/Phải trong trình xem Ảnh và Video toàn màn hình */
+    .media-viewer-nav{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;border:1px solid rgba(255,255,255,.22);background:rgba(20,30,48,.58);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:5;transition:background .16s ease,transform .16s ease,opacity .16s ease}
+    .media-viewer-nav:hover:not(:disabled){background:rgba(8,102,214,.85);transform:translateY(-50%) scale(1.06)}
+    .media-viewer-nav:disabled{opacity:.22;cursor:not-allowed;background:rgba(20,30,48,.3)}
+    .media-viewer-nav.prev{left:22px}
+    .media-viewer-nav.next{right:22px}
+    .media-viewer-nav svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+    @media(max-width:640px){.media-viewer-nav{width:40px;height:40px}.media-viewer-nav.prev{left:10px}.media-viewer-nav.next{right:10px}}
+    #image-viewer,#image-viewer *,.shared-img-grid,.shared-media-item{user-select:none;-webkit-user-select:none}
+    #image-viewer-img{-webkit-user-drag:none;outline:none}
+    #image-viewer-img::selection,#image-viewer *::selection{background:transparent}
   </style>
 </body>
 

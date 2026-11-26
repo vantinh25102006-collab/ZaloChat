@@ -286,6 +286,7 @@ function handleServerMessage(msg) {
     case 'group_left':           onGroupDeleted(msg);           break;
     case 'posts_result':         onPostsResult(msg);              break;
     case 'profile_updated':      onProfileUpdated(msg); break;
+    case 'p2p_signal':           onP2PSignal(msg); break;
     case 'mute_conversation':    if(msg.muted) state.mutedConversations.add(msg.conversationId); else state.mutedConversations.delete(msg.conversationId); showToast(msg.muted?'Đã tắt thông báo.':'Đã bật thông báo.','success'); break;
     case 'error':                showToast(msg.content, 'error'); break;
   }
@@ -779,12 +780,103 @@ function updateChatHeaderStatus() {
   if (!current) return;
   if (current.type === 'dm') {
     const online = state.onlineUsers.includes(current.name);
-    dom.chatHeaderStatus.textContent = formatPresenceStatus(current.name, online);
+    const baseStatus = formatPresenceStatus(current.name, online);
+    const peerEntry = state.p2pPeers?.get(current.name);
+    const p2pTag = online ? (peerEntry?.ready ? ' · P2P DataChannel' : ' · P2P Direct') : '';
+    dom.chatHeaderStatus.textContent = baseStatus + p2pTag;
     dom.chatHeaderStatus.style.color = online ? '#2ecc71' : '#8893a4';
   } else if (current.type === 'group') {
     const g = state.groups.get(state.currentConvId.replace('group:',''));
-    dom.chatHeaderStatus.innerHTML = `<span class="hdr-members-link" title="Xem thành viên nhóm" onclick="openRightPanelMembers()">${UI_ICONS.user}<span>${g?.members?.length || 0} thành viên</span></span>`;
+    const mcastTag = g?.multicastIp ? ` · Multicast ${escHtml(g.multicastIp)}:6789` : '';
+    dom.chatHeaderStatus.innerHTML = `<span class="hdr-members-link" title="Xem thành viên nhóm" onclick="openRightPanelMembers()">${UI_ICONS.user}<span>${g?.members?.length || 0} thành viên${mcastTag}</span></span>`;
     dom.chatHeaderStatus.style.color = '#52627a';
+  }
+}
+
+// ─── WebRTC Peer-to-Peer (RTCDataChannel) cho Chat 1-vs-1 giữa 2 trình duyệt ──
+function setupP2PDataChannelEvents(peerUsername, dc) {
+  if (!state.p2pPeers) state.p2pPeers = new Map();
+  dc.onopen = () => {
+    const entry = state.p2pPeers.get(peerUsername);
+    if (entry) entry.ready = true;
+    console.log(`[P2P-WebRTC] RTCDataChannel đã mở trực tiếp với '${peerUsername}'`);
+    updateChatHeaderStatus();
+  };
+  dc.onclose = () => {
+    const entry = state.p2pPeers.get(peerUsername);
+    if (entry) entry.ready = false;
+    updateChatHeaderStatus();
+  };
+  dc.onmessage = e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg && msg.type === 'private_message') {
+        onPrivateMessage(msg);
+      }
+    } catch (err) {
+      console.error('[P2P-WebRTC] Lỗi đọc gói P2P:', err);
+    }
+  };
+}
+
+async function ensureP2PDataChannel(peerUsername) {
+  if (!state.p2pPeers) state.p2pPeers = new Map();
+  if (!peerUsername || peerUsername === state.username || typeof RTCPeerConnection === 'undefined') return;
+  if (!state.onlineUsers.includes(peerUsername)) return;
+  const existing = state.p2pPeers.get(peerUsername);
+  if (existing && (existing.ready || existing.pc.connectionState === 'connecting')) return;
+
+  try {
+    const pc = new RTCPeerConnection({ iceServers: [] });
+    const dc = pc.createDataChannel('zchat-p2p');
+    const entry = { pc, dc, ready: false };
+    state.p2pPeers.set(peerUsername, entry);
+    setupP2PDataChannelEvents(peerUsername, dc);
+
+    pc.onicecandidate = ev => {
+      if (ev.candidate) {
+        wsSend({ type: 'p2p_signal', to: peerUsername, signalType: 'candidate', candidate: ev.candidate });
+      }
+    };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    wsSend({ type: 'p2p_signal', to: peerUsername, signalType: 'offer', sdp: pc.localDescription });
+  } catch (err) {
+    console.warn('[P2P-WebRTC] Không thể khởi tạo RTCPeerConnection:', err);
+  }
+}
+
+async function onP2PSignal(msg) {
+  if (!state.p2pPeers) state.p2pPeers = new Map();
+  const from = msg.from;
+  if (!from || typeof RTCPeerConnection === 'undefined') return;
+  try {
+    let entry = state.p2pPeers.get(from);
+    if (msg.signalType === 'offer') {
+      if (entry?.pc) { try { entry.pc.close(); } catch (_) {} }
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      entry = { pc, dc: null, ready: false };
+      state.p2pPeers.set(from, entry);
+      pc.ondatachannel = ev => {
+        entry.dc = ev.channel;
+        setupP2PDataChannelEvents(from, ev.channel);
+      };
+      pc.onicecandidate = ev => {
+        if (ev.candidate) {
+          wsSend({ type: 'p2p_signal', to: from, signalType: 'candidate', candidate: ev.candidate });
+        }
+      };
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      wsSend({ type: 'p2p_signal', to: from, signalType: 'answer', sdp: pc.localDescription });
+    } else if (msg.signalType === 'answer' && entry?.pc) {
+      await entry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+    } else if (msg.signalType === 'candidate' && entry?.pc && msg.candidate) {
+      await entry.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+    }
+  } catch (err) {
+    console.warn('[P2P-WebRTC] Lỗi xử lý tín hiệu P2P:', err);
   }
 }
 
@@ -1366,6 +1458,7 @@ function selectConversation(convId) {
     wsSend({ type: 'user_profile', username: conv.name });
     dom.chatHeaderAv.innerHTML = userAvatarInner(conv.name);
     updateStrangerBanner(conv.name);
+    ensureP2PDataChannel(conv.name);
     if ($('hdr-add-member-btn')) $('hdr-add-member-btn').style.display = 'none';
   } else {
     const gid = convId.replace('group:', '');
@@ -4275,45 +4368,111 @@ async function uploadProfileAvatar(file){
   catch(e){showToast(e.message,'error');}
 }
 
-function openImageViewer(url, filename = '') {
+function getConversationMediaItems() {
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv || !conv.messages) return [];
+  return conv.messages
+    .filter(m => m.fileId && ((m.mimeType || '').startsWith('image/') || (m.mimeType || '').startsWith('video/')))
+    .slice()
+    .reverse()
+    .map(m => ({
+      url: `/api/files/${encodeURIComponent(m.fileId)}`,
+      filename: m.filename || ((m.mimeType || '').startsWith('video/') ? 'video.mp4' : 'image'),
+      isVideo: (m.mimeType || '').startsWith('video/'),
+      sender: m.from || m.username || '',
+      timestamp: m.timestamp || '',
+    }));
+}
+
+function renderMediaViewerAtIndex(index) {
+  const list = state.mediaViewerList || [];
+  if (!list.length) return;
+  const total = list.length;
+  if (index < 0 || index >= total) return;
+  state.mediaViewerIndex = index;
+  const item = list[state.mediaViewerIndex];
+
   const overlay = $('image-viewer');
   const img = $('image-viewer-img');
   const cap = $('image-viewer-caption');
+  const prevBtn = $('image-viewer-prev');
+  const nextBtn = $('image-viewer-next');
   if (!overlay || !img) return;
-  const oldVid = $('image-viewer-video');
-  if (oldVid) { oldVid.pause(); oldVid.remove(); }
-  img.style.display = 'block';
-  img.src = url;
+
+  if (prevBtn) {
+    prevBtn.style.display = 'flex';
+    prevBtn.disabled = state.mediaViewerIndex <= 0;
+  }
+  if (nextBtn) {
+    nextBtn.style.display = 'flex';
+    nextBtn.disabled = state.mediaViewerIndex >= total - 1;
+  }
+
+  let vid = $('image-viewer-video');
+  if (item.isVideo) {
+    img.style.display = 'none';
+    img.src = '';
+    if (!vid) {
+      vid = document.createElement('video');
+      vid.id = 'image-viewer-video';
+      vid.controls = true;
+      vid.autoplay = true;
+      vid.playsInline = true;
+      vid.style.cssText = 'max-width:min(90vw,1180px);max-height:78vh;border-radius:10px;background:#000;box-shadow:0 12px 50px rgba(0,0,0,.5)';
+      img.insertAdjacentElement('afterend', vid);
+    }
+    vid.src = item.url;
+  } else {
+    if (vid) { vid.pause(); vid.remove(); }
+    img.style.display = 'block';
+    img.src = item.url;
+  }
+
   const dl = $('image-viewer-download');
-  if (dl) { dl.href = url; dl.download = filename || 'image'; }
-  if (cap) cap.textContent = filename || '';
+  if (dl) { dl.href = item.url; dl.download = item.filename; }
+  if (cap) {
+    const metaParts = [];
+    metaParts.push(`[${state.mediaViewerIndex + 1}/${total}]`);
+    if (item.filename) metaParts.push(item.filename);
+    if (item.sender) metaParts.push(`Người gửi: ${item.sender}`);
+    if (item.timestamp && typeof formatDateTimeFull === 'function') metaParts.push(formatDateTimeFull(item.timestamp));
+    cap.textContent = metaParts.join(' · ');
+  }
   overlay.classList.add('visible');
   document.body.style.overflow = 'hidden';
 }
 
-function openVideoViewer(url, filename = 'video.mp4') {
-  const overlay = $('image-viewer');
-  const img = $('image-viewer-img');
-  const cap = $('image-viewer-caption');
-  if (!overlay || !img) return;
-  img.style.display = 'none';
-  img.src = '';
-  let vid = $('image-viewer-video');
-  if (!vid) {
-    vid = document.createElement('video');
-    vid.id = 'image-viewer-video';
-    vid.controls = true;
-    vid.autoplay = true;
-    vid.playsInline = true;
-    vid.style.cssText = 'max-width:min(94vw,1200px);max-height:80vh;border-radius:10px;background:#000;box-shadow:0 12px 50px rgba(0,0,0,.5)';
-    img.insertAdjacentElement('afterend', vid);
+function stepMediaViewer(delta) {
+  try { window.getSelection()?.removeAllRanges(); } catch (_) {}
+  const list = state.mediaViewerList || [];
+  if (!list.length) return;
+  const nextIdx = (state.mediaViewerIndex || 0) + delta;
+  if (nextIdx < 0 || nextIdx >= list.length) return;
+  renderMediaViewerAtIndex(nextIdx);
+}
+
+function openImageViewer(url, filename = '') {
+  const list = getConversationMediaItems();
+  const idx = list.findIndex(x => x.url === url);
+  if (idx !== -1) {
+    state.mediaViewerList = list;
+    renderMediaViewerAtIndex(idx);
+  } else {
+    state.mediaViewerList = [{ url, filename: filename || 'image', isVideo: false, sender: '', timestamp: '' }];
+    renderMediaViewerAtIndex(0);
   }
-  vid.src = url;
-  const dl = $('image-viewer-download');
-  if (dl) { dl.href = url; dl.download = filename || 'video.mp4'; }
-  if (cap) cap.textContent = filename || '';
-  overlay.classList.add('visible');
-  document.body.style.overflow = 'hidden';
+}
+
+function openVideoViewer(url, filename = 'video.mp4') {
+  const list = getConversationMediaItems();
+  const idx = list.findIndex(x => x.url === url);
+  if (idx !== -1) {
+    state.mediaViewerList = list;
+    renderMediaViewerAtIndex(idx);
+  } else {
+    state.mediaViewerList = [{ url, filename: filename || 'video.mp4', isVideo: true, sender: '', timestamp: '' }];
+    renderMediaViewerAtIndex(0);
+  }
 }
 
 function closeImageViewer() {
@@ -4322,6 +4481,8 @@ function closeImageViewer() {
   if (img) { img.src = ''; img.style.display = 'block'; }
   const vid = $('image-viewer-video');
   if (vid) { vid.pause(); vid.remove(); }
+  state.mediaViewerList = [];
+  state.mediaViewerIndex = 0;
   document.body.style.overflow = '';
 }
 
@@ -4548,6 +4709,10 @@ document.addEventListener('click', e => {
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
+  if ($('image-viewer')?.classList.contains('visible')) {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); stepMediaViewer(-1); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); stepMediaViewer(1); return; }
+  }
   if (e.key === 'Escape') {
     closeMentionBox();
     document.querySelector('.reaction-people-overlay')?.remove();
@@ -4579,7 +4744,7 @@ function closeFriendReqModal() { $('freq-modal-overlay')?.classList.remove('visi
 Object.assign(window, {
   markFileDownloaded, saveFileWithLocation,
   selectConversation, switchTab, switchContactsSubView, setContactsSearch, setContactsSort, toggleRpSection, toggleRpShowAll, enterSidebarSearch, exitSidebarSearch, openSearchConvTarget, clearRecentSearches, saveRecentSearch, openGroupModal, closeGroupModal, submitCreateGroup,
-  logout, cancelSessionRestore, openImageViewer, openVideoViewer, closeImageViewer, showPanel,
+  logout, cancelSessionRestore, openImageViewer, openVideoViewer, closeImageViewer, stepMediaViewer, showPanel,
   toggleRightPanel, closeRightPanel, openRightPanelMembers, openRightPanelManage, backToRightPanelInfo, openRightPanelMemberMenu, toggleUserMenu, closeUserMenu, switchRpTab, toggleGroupSetting, togglePinConversation, toggleProfilePageForChat,
   toggleMsgSearch, closeMsgSearch, stepMsgSearch,
   openAddFriendModal, closeAddFriendModal, searchByPhone,

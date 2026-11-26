@@ -69,5 +69,6 @@ public enum MessageType {
     @SerializedName("unpin_message") UNPIN_MESSAGE,
     @SerializedName("message_pinned") MESSAGE_PINNED,
     @SerializedName("toggle_star_message") TOGGLE_STAR_MESSAGE,
-    @SerializedName("message_starred") MESSAGE_STARRED
+    @SerializedName("message_starred") MESSAGE_STARRED,
+    @SerializedName("p2p_signal") P2P_SIGNAL
 }

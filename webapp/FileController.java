@@ -317,19 +317,27 @@ public class FileController {
 
     private void notifyFileShare(ChatMessage msg, String from, String to, String groupId) {
         Map<String, WebSocketSession> sessions = wsHandler.getSessions();
+        var p2pMulticast = wsHandler.getP2pMulticast();
         try {
             String json = gson.toJson(msg);
             if (groupId != null && !groupId.isBlank()) {
                 Group group = wsHandler.getGroups().get(groupId);
                 if (group != null) {
-                    for (String member : group.getMembers()) {
-                        WebSocketSession ms = sessions.get(member);
-                        if (ms != null && ms.isOpen()) ms.sendMessage(new TextMessage(json));
+                    if (p2pMulticast != null) {
+                        p2pMulticast.sendMulticastGroupMessage(from, group, json);
+                    } else {
+                        for (String member : group.getMembers()) {
+                            WebSocketSession ms = sessions.get(member);
+                            if (ms != null && ms.isOpen()) ms.sendMessage(new TextMessage(json));
+                        }
                     }
                 }
             } else if (to != null && !to.isBlank()) {
-                WebSocketSession ts = sessions.get(to);
-                if (ts != null && ts.isOpen()) ts.sendMessage(new TextMessage(json));
+                boolean sentP2p = p2pMulticast != null && p2pMulticast.sendP2PDirectMessage(from, to, json);
+                if (!sentP2p) {
+                    WebSocketSession ts = sessions.get(to);
+                    if (ts != null && ts.isOpen()) ts.sendMessage(new TextMessage(json));
+                }
                 WebSocketSession fs = sessions.get(from);
                 if (fs != null && fs.isOpen()) fs.sendMessage(new TextMessage(json));
             } else {
