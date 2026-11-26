@@ -62,78 +62,57 @@
 
   function settingsMarkup() {
     return `
-      <div class="appearance-overlay" id="appearance-overlay" role="presentation" hidden>
-        <section class="appearance-dialog" role="dialog" aria-modal="true" aria-labelledby="appearance-title">
-          <header class="appearance-header">
-            <div>
-              <h2 id="appearance-title">Giao diện và phím tắt</h2>
-              <p>Tùy chỉnh riêng trên trình duyệt này</p>
-            </div>
-            <button type="button" class="appearance-close" data-appearance-close aria-label="Đóng">×</button>
-          </header>
-          <div class="appearance-content">
-            <label class="appearance-field">
-              <span>Chế độ màu</span>
-              <select id="appearance-theme">
-                <option value="system">Theo hệ thống</option>
-                <option value="light">Sáng</option>
-                <option value="dark">Tối</option>
-              </select>
-            </label>
-            <label class="appearance-field">
-              <span>Nền khung chat</span>
-              <select id="appearance-chat-background">
-                <option value="default">Mặc định</option>
-                <option value="slate">Xanh nhạt</option>
-                <option value="warm">Ấm</option>
-              </select>
-            </label>
-            <label class="appearance-range">
-              <span>Cỡ chữ tin nhắn <output id="appearance-font-size-value"></output></span>
-              <input id="appearance-font-size" type="range" min="13" max="18" step="1">
-            </label>
-            <label class="appearance-range">
-              <span>Độ rộng bong bóng <output id="appearance-bubble-width-value"></output></span>
-              <input id="appearance-bubble-width" type="range" min="55" max="85" step="1">
-            </label>
-            <section class="appearance-shortcuts" aria-labelledby="appearance-shortcuts-title">
-              <h3 id="appearance-shortcuts-title">Phím tắt</h3>
-              <div><kbd>Ctrl</kbd> + <kbd>K</kbd><span>Tìm cuộc trò chuyện</span></div>
-              <div><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd><span>Đổi sáng / tối</span></div>
-              <div><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd><span>Mở cài đặt giao diện</span></div>
-              <div><kbd>Esc</kbd><span>Đóng cửa sổ đang mở</span></div>
-            </section>
-          </div>
-          <footer class="appearance-footer">
-            <button type="button" class="appearance-reset" id="appearance-reset">Đặt lại mặc định</button>
-            <button type="button" class="appearance-done" data-appearance-close>Hoàn tất</button>
-          </footer>
+      <section class="appearance-settings" aria-labelledby="appearance-title">
+        <h3 id="appearance-title">Giao diện và phím tắt</h3>
+        <label class="appearance-field">
+          <span>Chế độ màu</span>
+          <select id="appearance-theme">
+            <option value="system">Theo hệ thống</option>
+            <option value="light">Sáng</option>
+            <option value="dark">Tối</option>
+          </select>
+        </label>
+        <label class="appearance-field">
+          <span>Nền khung chat</span>
+          <select id="appearance-chat-background">
+            <option value="default">Mặc định</option>
+            <option value="slate">Xanh nhạt</option>
+            <option value="warm">Ấm</option>
+          </select>
+        </label>
+        <label class="appearance-range">
+          <span>Cỡ chữ tin nhắn <output id="appearance-font-size-value"></output></span>
+          <input id="appearance-font-size" type="range" min="13" max="18" step="1">
+        </label>
+        <label class="appearance-range">
+          <span>Độ rộng bong bóng <output id="appearance-bubble-width-value"></output></span>
+          <input id="appearance-bubble-width" type="range" min="55" max="85" step="1">
+        </label>
+        <section class="appearance-shortcuts" aria-labelledby="appearance-shortcuts-title">
+          <h4 id="appearance-shortcuts-title">Phím tắt</h4>
+          <div><kbd>Ctrl</kbd> + <kbd>K</kbd><span>Tìm cuộc trò chuyện</span></div>
+          <div><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd><span>Đổi sáng / tối</span></div>
+          <div><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>A</kbd><span>Mở cài đặt</span></div>
+          <div><kbd>Esc</kbd><span>Đóng cửa sổ đang mở</span></div>
         </section>
-      </div>`;
+        <button type="button" class="appearance-reset" id="appearance-reset">Đặt lại giao diện mặc định</button>
+      </section>`;
   }
 
-  function updateControlValues() {
-    const theme = document.getElementById('appearance-theme');
+  function updateControlValues(container = document) {
+    const theme = container.querySelector('#appearance-theme');
     if (!theme) return;
     theme.value = preferences.theme;
-    document.getElementById('appearance-chat-background').value = preferences.chatBackground;
-    document.getElementById('appearance-font-size').value = preferences.fontSize;
-    document.getElementById('appearance-font-size-value').textContent = `${preferences.fontSize}px`;
-    document.getElementById('appearance-bubble-width').value = preferences.bubbleWidth;
-    document.getElementById('appearance-bubble-width-value').textContent = `${preferences.bubbleWidth}%`;
-  }
-
-  function closeSettings() {
-    const overlay = document.getElementById('appearance-overlay');
-    if (overlay) overlay.hidden = true;
+    container.querySelector('#appearance-chat-background').value = preferences.chatBackground;
+    container.querySelector('#appearance-font-size').value = preferences.fontSize;
+    container.querySelector('#appearance-font-size-value').textContent = `${preferences.fontSize}px`;
+    container.querySelector('#appearance-bubble-width').value = preferences.bubbleWidth;
+    container.querySelector('#appearance-bubble-width-value').textContent = `${preferences.bubbleWidth}%`;
   }
 
   function openSettings() {
-    const overlay = document.getElementById('appearance-overlay');
-    if (!overlay) return;
-    overlay.hidden = false;
-    updateControlValues();
-    document.getElementById('appearance-theme').focus();
+    window.openSettingsModal();
+    window.requestAnimationFrame(() => document.getElementById('appearance-theme')?.focus());
   }
 
   function toggleTheme() {
@@ -160,43 +139,36 @@
       search?.select();
       return;
     }
-    if (event.key === 'Escape') closeSettings();
   }
 
-  function initializeSettings() {
-    document.body.insertAdjacentHTML('beforeend', settingsMarkup());
-    const overlay = document.getElementById('appearance-overlay');
-    document.getElementById('appearance-settings-btn')?.addEventListener('click', openSettings);
-    overlay.addEventListener('click', event => {
-      if (event.target === overlay || event.target.closest('[data-appearance-close]')) closeSettings();
-    });
-    document.getElementById('appearance-theme').addEventListener('change', event => {
+  function bindSettingsControls(container) {
+    container.querySelector('#appearance-theme').addEventListener('change', event => {
       updatePreference('theme', event.target.value);
     });
-    document.getElementById('appearance-chat-background').addEventListener('change', event => {
+    container.querySelector('#appearance-chat-background').addEventListener('change', event => {
       updatePreference('chatBackground', event.target.value);
     });
-    document.getElementById('appearance-font-size').addEventListener('input', event => {
+    container.querySelector('#appearance-font-size').addEventListener('input', event => {
       updatePreference('fontSize', Number(event.target.value));
     });
-    document.getElementById('appearance-bubble-width').addEventListener('input', event => {
+    container.querySelector('#appearance-bubble-width').addEventListener('input', event => {
       updatePreference('bubbleWidth', Number(event.target.value));
     });
-    document.getElementById('appearance-reset').addEventListener('click', () => {
+    container.querySelector('#appearance-reset').addEventListener('click', () => {
       preferences = { ...defaults };
       applyPreferences();
       savePreferences();
-      updateControlValues();
+      updateControlValues(container);
     });
-    document.addEventListener('keydown', handleShortcuts);
-    if (media.addEventListener) {
-      media.addEventListener('change', () => {
-        if (preferences.theme === 'system') applyPreferences();
-      });
-    }
-    updateControlValues();
+    updateControlValues(container);
   }
 
+  document.addEventListener('keydown', handleShortcuts);
+  if (media.addEventListener) {
+    media.addEventListener('change', () => {
+      if (preferences.theme === 'system') applyPreferences();
+    });
+  }
+  window.ZChatAppearance = { settingsMarkup, bindSettingsControls };
   applyPreferences();
-  document.addEventListener('DOMContentLoaded', initializeSettings, { once: true });
 })();

@@ -5464,7 +5464,8 @@ $('image-input')?.addEventListener('change', async e => {
 function openSettingsModal() {
   openGroupActionModal(
     'Cài đặt',
-    `<div style="display:flex;flex-direction:column;gap:8px">
+    `${window.ZChatAppearance.settingsMarkup()}
+     <div class="settings-actions">
        <button type="button" class="option-action" onclick="closeGroupActionModal();openProfilePage()">
          <span class="opt-ico">${UI_ICONS.user}</span><span>Thông tin tài khoản (${escHtml(state.username || '')})</span>
        </button>
@@ -5477,6 +5478,7 @@ function openSettingsModal() {
      </div>`,
     `<button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`
   );
+  window.ZChatAppearance.bindSettingsControls($('group-action-modal-body'));
 }
 
 dom.attachBtn?.addEventListener('click', () => dom.fileInput.click());
@@ -5573,6 +5575,7 @@ function closeFriendReqModal() { $('freq-modal-overlay')?.classList.remove('visi
 
 // ─── Global expose ────────────────────────────────────────────────────────────
 Object.assign(window, {
+  openSettingsModal,
   markFileDownloaded, saveFileWithLocation, openFilePreviewModal, closeFilePreviewModal, copyFilePreviewContent,
   setWordPreviewZoom, printWordPreview, toggleCodePreviewWrap, switchExcelPreviewSheet, selectExcelPreviewCell, selectPptPreviewSlide,
   selectConversation, switchTab, switchContactsSubView, setContactsSearch, setContactsSort, toggleRpSection, toggleRpShowAll, enterSidebarSearch, exitSidebarSearch, openSearchConvTarget, clearRecentSearches, saveRecentSearch, openGroupModal, closeGroupModal, submitCreateGroup,

@@ -381,3 +381,39 @@
     transition-duration: .01ms !important;
   }
 }
+
+#appearance-settings-btn {
+  display: none;
+}
+
+.appearance-settings {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--gray-mid);
+}
+
+.appearance-settings > h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.settings-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 16px;
+}
+
+.appearance-shortcuts h4 {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+
+.appearance-settings .appearance-reset {
+  width: 100%;
+}
+
+:root[data-zchat-theme="dark"] .appearance-settings {
+  border-color: #354052;
+}
