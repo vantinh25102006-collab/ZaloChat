@@ -3737,6 +3737,29 @@
       <div class="modal-footer" id="group-action-modal-footer"></div>
     </div>
   </div>
+  <!-- ══════════════════════════════════════════════════════════
+       FILE PREVIEW MODAL (Xem nội dung file trực tiếp trên nền tảng)
+  ══════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="file-preview-modal-overlay">
+    <div class="modal-box file-preview-modal-box">
+      <div class="modal-hdr file-preview-hdr">
+        <div class="file-preview-title-wrap">
+          <div id="file-preview-icon"></div>
+          <div style="min-width:0">
+            <h2 id="file-preview-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Xem tệp</h2>
+            <div id="file-preview-subtitle" style="font-size:12px;color:#758398;margin-top:2px"></div>
+          </div>
+        </div>
+        <div class="file-preview-hdr-actions">
+          <button type="button" class="gm-btn" id="file-preview-copy-btn" style="display:none" onclick="copyFilePreviewContent()">Sao chép nội dung</button>
+          <button type="button" class="gm-btn" id="file-preview-saveas-btn" title="Chọn vị trí lưu">Lưu vào...</button>
+          <a class="gm-btn" id="file-preview-download-btn" href="#" download style="text-decoration:none;background:#0068ff;color:#fff;border-color:#0068ff">Tải xuống</a>
+          <button class="modal-close" onclick="closeFilePreviewModal()">×</button>
+        </div>
+      </div>
+      <div class="modal-body file-preview-body" id="file-preview-body"></div>
+    </div>
+  </div>
   <div id="image-viewer" onclick="if(event.target===this)closeImageViewer()">
     <button id="image-viewer-close" onclick="closeImageViewer()" aria-label="Đóng">×</button>
     <a id="image-viewer-download" href="#" download="image" title="Tải xuống">
@@ -3762,7 +3785,7 @@
 ══════════════════════════════════════════════════════════ -->
   <div id="toast-container"></div>
 
-  <script src="app.js?v=20261126d"></script>
+  <script src="app.js?v=20261126f"></script>
 
   <style>
     /* Avatar ảnh thật trong từng nhóm tin nhắn */
@@ -8829,6 +8852,84 @@
     #image-viewer,#image-viewer *,.shared-img-grid,.shared-media-item{user-select:none;-webkit-user-select:none}
     #image-viewer-img{-webkit-user-drag:none;outline:none}
     #image-viewer-img::selection,#image-viewer *::selection{background:transparent}
+
+    /* ── Trình xem nội dung File trực tiếp trên nền tảng (Office / PDF / Code Suite) ── */
+    .file-preview-modal-box{width:min(1120px,96vw)!important;max-width:96vw!important;height:min(88vh,860px);max-height:90vh!important;display:flex;flex-direction:column;border-radius:14px;overflow:hidden}
+    .file-preview-hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px!important;background:#f8fafd;border-bottom:1px solid #dfe5ef}
+    .file-preview-hdr.theme-word{background:#185abd;color:#fff;border-bottom-color:#134a96}
+    .file-preview-hdr.theme-excel{background:#107c41;color:#fff;border-bottom-color:#0c5e31}
+    .file-preview-hdr.theme-ppt{background:#c43e1c;color:#fff;border-bottom-color:#a53114}
+    .file-preview-hdr.theme-pdf{background:#323639;color:#fff;border-bottom-color:#202124}
+    .file-preview-hdr.theme-code{background:#181825;color:#cdd6f4;border-bottom-color:#313244}
+    .file-preview-hdr[class*="theme-"] h2{color:#fff!important}
+    .file-preview-hdr[class*="theme-"] #file-preview-subtitle{color:rgba(255,255,255,.8)!important}
+    .file-preview-hdr[class*="theme-"] .modal-close{color:#fff!important}
+    .file-preview-hdr[class*="theme-"] .modal-close:hover{background:rgba(255,255,255,.16)!important}
+    .file-preview-title-wrap{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
+    .file-preview-title-wrap .ftype{width:34px;height:40px;flex:0 0 34px}
+    .file-preview-hdr-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+    .file-preview-body{flex:1;padding:0!important;overflow:hidden;background:#e8ecf2;color:#172033;display:flex;flex-direction:column;min-height:0}
+
+    /* Word Viewer (A4 Page Canvas) */
+    .office-toolbar{display:flex;align-items:center;justify-content:space-between;padding:7px 16px;background:#f3f5f8;border-bottom:1px solid #d8e0ec;font-size:12px;color:#4a586e;flex-shrink:0;gap:12px}
+    .office-toolbar-group{display:flex;align-items:center;gap:6px}
+    .office-tool-btn{padding:4px 10px;border:1px solid #cfd7e6;border-radius:5px;background:#fff;color:#2c3a50;font-size:12px;font-weight:600;cursor:pointer}
+    .office-tool-btn:hover{background:#edf4ff;border-color:#8dbbff;color:#0866d6}
+    .word-canvas{flex:1;overflow:auto;background:#e3e7ee;padding:28px 16px;display:flex;flex-direction:column;align-items:center}
+    .word-page{width:min(794px,94%);min-height:980px;background:#fff;color:#111827;box-shadow:0 4px 20px rgba(15,23,42,.15);border:1px solid #d4dae3;padding:56px 64px;font-family:'Times New Roman','Calibri',serif;font-size:15.5px;line-height:1.65;transform-origin:top center;transition:transform .15s ease}
+    .word-page p{margin:0 0 10px;min-height:1em;word-break:break-word}
+    .word-page h1{font-size:24px;font-weight:700;color:#1e3a8a;margin:16px 0 10px}
+    .word-page h2{font-size:19px;font-weight:700;color:#1e40af;margin:14px 0 8px}
+    .word-page h3{font-size:16.5px;font-weight:700;color:#1d4ed8;margin:12px 0 6px}
+    .word-page table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+    .word-page td,.word-page th{border:1px solid #94a3b8;padding:7px 10px;vertical-align:top}
+
+    /* Excel Viewer (Spreadsheet Grid + Formula bar + Sheet tabs) */
+    .excel-formula-bar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#f9fbfd;border-bottom:1px solid #d5dde8;font-size:12.5px;flex-shrink:0}
+    .excel-cell-ref{width:58px;padding:3px 8px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;font-weight:700;text-align:center;color:#0f172a;font-family:'Consolas',monospace}
+    .excel-fx-lbl{font-style:italic;font-weight:700;color:#107c41;padding:0 4px;font-family:serif}
+    .excel-formula-val{flex:1;padding:3px 10px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;min-height:25px;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .excel-grid-container{flex:1;overflow:auto;background:#fff;position:relative}
+    .excel-sheet-table{border-collapse:collapse;font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;min-width:100%;table-layout:fixed}
+    .excel-sheet-table th,.excel-sheet-table td{border:1px solid #d4d8df;padding:5px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;height:26px}
+    .excel-col-hdr{background:#f1f3f6;color:#334155;font-weight:700;text-align:center!important;position:sticky;top:0;z-index:2;min-width:100px;user-select:none}
+    .excel-row-hdr{background:#f1f3f6;color:#475569;font-weight:600;text-align:center!important;position:sticky;left:0;z-index:1;width:44px;min-width:44px;max-width:44px;user-select:none}
+    .excel-corner-hdr{background:#e2e8f0;position:sticky;top:0;left:0;z-index:3;width:44px;min-width:44px}
+    .excel-sheet-table td{background:#fff;color:#0f172a;cursor:cell}
+    .excel-sheet-table td.selected-cell{outline:2px solid #107c41;outline-offset:-2px;background:#ecfdf5}
+    .excel-sheet-tabs{display:flex;align-items:center;gap:4px;padding:6px 12px;background:#f1f3f6;border-top:1px solid #d0d7e2;overflow-x:auto;flex-shrink:0}
+    .excel-sheet-tab{padding:5px 14px;border:1px solid transparent;border-bottom:2px solid transparent;border-radius:4px 4px 0 0;background:transparent;color:#475569;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+    .excel-sheet-tab:hover{background:#e2e8f0}
+    .excel-sheet-tab.active{background:#fff;color:#107c41;border-color:#d0d7e2;border-bottom:2px solid #107c41;font-weight:700}
+
+    /* PowerPoint Viewer (Slide Deck) */
+    .ppt-workspace{flex:1;display:flex;overflow:hidden;background:#262626}
+    .ppt-sidebar{width:190px;background:#1f1f1f;border-right:1px solid #383838;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;flex-shrink:0}
+    .ppt-thumb{padding:10px;border-radius:6px;background:#2d2d2d;border:2px solid transparent;color:#e5e5e5;cursor:pointer;font-size:11px;line-height:1.4}
+    .ppt-thumb:hover{background:#383838}
+    .ppt-thumb.active{border-color:#f97316;background:#3a2a22}
+    .ppt-thumb-num{font-weight:700;color:#fb923c;margin-bottom:4px;font-size:11px}
+    .ppt-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;overflow:auto}
+    .ppt-slide-card{width:min(820px,95%);aspect-ratio:16/9;background:linear-gradient(145deg,#ffffff 0%,#f8fafc 100%);color:#0f172a;border-radius:10px;box-shadow:0 14px 44px rgba(0,0,0,.45);padding:44px 56px;display:flex;flex-direction:column;justify-content:center;gap:14px;overflow:auto}
+    .ppt-slide-card h2{font-size:28px;font-weight:800;color:#c2410c;margin:0 0 8px}
+    .ppt-slide-card p{font-size:17px;line-height:1.6;color:#1e293b;margin:0}
+
+    /* Code / Text Viewer */
+    .file-preview-code-wrap{flex:1;display:flex;min-height:0;font-family:'Cascadia Code','Consolas','Courier New',monospace;font-size:13px;line-height:1.65;overflow:auto;background:#1e1e2e;color:#cdd6f4}
+    .file-preview-lines{padding:16px 12px;background:#181825;color:#6c7086;text-align:right;user-select:none;border-right:1px solid #313244;flex-shrink:0;min-width:52px;margin:0}
+    .file-preview-code{padding:16px 18px;margin:0;white-space:pre;overflow-x:auto;flex:1;color:#cdd6f4;tab-size:4}
+    .tok-kw{color:#cba6f7;font-weight:600}
+    .tok-str{color:#a6e3a1}
+    .tok-com{color:#6c7086;font-style:italic}
+    .tok-num{color:#fab387}
+    .tok-ann{color:#f9e2af}
+
+    .file-preview-iframe{width:100%;height:100%;border:0;background:#323639;flex:1}
+    .file-preview-zip-list{background:#fff;color:#172033;padding:16px 22px;flex:1;overflow-y:auto}
+    .file-preview-zip-row{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #f0f3f8;font-size:13px;font-family:'Consolas',monospace}
+    .file-preview-zip-row:hover{background:#f5f8ff}
+    .file-card-info,.shared-file-info{cursor:pointer}
+    .file-card-info:hover .file-card-name,.shared-file-info:hover .shared-file-name{color:#0068ff;text-decoration:underline}
   </style>
 </body>
 

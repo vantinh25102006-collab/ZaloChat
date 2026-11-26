@@ -92,6 +92,7 @@ const UI_ICONS = {
   bellOff: '<svg viewBox="0 0 24 24"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
   edit: '<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  eye: '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
   camera: '<svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
   chat: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
   download: '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
@@ -780,15 +781,11 @@ function updateChatHeaderStatus() {
   if (!current) return;
   if (current.type === 'dm') {
     const online = state.onlineUsers.includes(current.name);
-    const baseStatus = formatPresenceStatus(current.name, online);
-    const peerEntry = state.p2pPeers?.get(current.name);
-    const p2pTag = online ? (peerEntry?.ready ? ' · P2P DataChannel' : ' · P2P Direct') : '';
-    dom.chatHeaderStatus.textContent = baseStatus + p2pTag;
+    dom.chatHeaderStatus.textContent = formatPresenceStatus(current.name, online);
     dom.chatHeaderStatus.style.color = online ? '#2ecc71' : '#8893a4';
   } else if (current.type === 'group') {
     const g = state.groups.get(state.currentConvId.replace('group:',''));
-    const mcastTag = g?.multicastIp ? ` · Multicast ${escHtml(g.multicastIp)}:6789` : '';
-    dom.chatHeaderStatus.innerHTML = `<span class="hdr-members-link" title="Xem thành viên nhóm" onclick="openRightPanelMembers()">${UI_ICONS.user}<span>${g?.members?.length || 0} thành viên${mcastTag}</span></span>`;
+    dom.chatHeaderStatus.innerHTML = `<span class="hdr-members-link" title="Xem thành viên nhóm" onclick="openRightPanelMembers()">${UI_ICONS.user}<span>${g?.members?.length || 0} thành viên</span></span>`;
     dom.chatHeaderStatus.style.color = '#52627a';
   }
 }
@@ -2631,12 +2628,16 @@ function buildFileBubble(msg, isMine, showSender = false) {
 
   const fileId = String(msg.fileId || '');
   const done = isMine || getDownloadedFiles().has(fileId);
-  const statusText = isMine ? 'Đã gửi' : (done ? 'Đã tải xuống' : 'Nhấn để tải');
+  const statusText = isMine ? 'Đã gửi' : (done ? 'Đã tải xuống' : 'Nhấn để xem / tải');
+  const safeMime = (mime || '').replace(/'/g, "\\'");
+  const safeSize = (msg.fileSize || '').replace(/'/g, "\\'");
+  const safeAuthor = (msg.from || msg.username || '').replace(/'/g, "\\'");
+  const previewCall = `openFilePreviewModal('${escHtml(fileId)}','${rawName}','${safeMime}','${safeSize}','${safeAuthor}')`;
   return `<div class="msg-bubble file-card">
     <div class="file-card-sender">Người gửi: <b>${author}</b> · ${escHtml(sentAt)}</div>
     <div class="file-card-main">
-      ${fileTypeIcon(mime, msg.filename)}
-      <div class="file-card-info">
+      <div style="cursor:pointer" title="Nhấn để xem nội dung tệp" onclick="${previewCall}">${fileTypeIcon(mime, msg.filename)}</div>
+      <div class="file-card-info" title="Nhấn để xem nội dung tệp" onclick="${previewCall}">
         <div class="file-card-name" title="${filename}">${filename}</div>
         <div class="file-card-meta">
           <span class="file-card-size">${escHtml(msg.fileSize || '')}</span>
@@ -2644,11 +2645,322 @@ function buildFileBubble(msg, isMine, showSender = false) {
         </div>
       </div>
       <div class="file-card-actions">
+        <button type="button" class="file-card-btn" title="Xem nội dung tệp trực tiếp" onclick="${previewCall}">${UI_ICONS.eye}</button>
         <button type="button" class="file-card-btn" title="Chọn đường dẫn lưu tệp (Save As...)" onclick="saveFileWithLocation('${url}','${rawName}','${escHtml(fileId)}')">${UI_ICONS.folderSave}</button>
         <a class="file-card-btn" href="${url}" download="${filename}" title="Tải về thư mục Downloads" onclick="markFileDownloaded('${escHtml(fileId)}')">${UI_ICONS.download}</a>
       </div>
     </div>
   </div>`;
+}
+
+// ─── Xem trước nội dung File trực tiếp trên nền tảng (File Preview Modal) ─────
+async function openFilePreviewModal(fileId, filename = 'Tệp đính kèm', mimeType = '', fileSize = '', sender = '') {
+  if (!fileId) return;
+  const url = `/api/files/${encodeURIComponent(fileId)}`;
+  const ext = ((filename || '').split('.').pop() || '').toLowerCase();
+  const mime = (mimeType || '').toLowerCase();
+
+  // Nếu là ảnh hoặc video thì mở trình xem toàn màn hình
+  if (mime.startsWith('image/') || ['png','jpg','jpeg','gif','webp','bmp','svg'].includes(ext)) {
+    openImageViewer(url, filename);
+    return;
+  }
+  if (mime.startsWith('video/') || ['mp4','webm','mov','mkv'].includes(ext)) {
+    openVideoViewer(url, filename);
+    return;
+  }
+
+  const overlay = $('file-preview-modal-overlay');
+  const titleEl = $('file-preview-title');
+  const subEl = $('file-preview-subtitle');
+  const iconEl = $('file-preview-icon');
+  const bodyEl = $('file-preview-body');
+  const copyBtn = $('file-preview-copy-btn');
+  const saveAsBtn = $('file-preview-saveas-btn');
+  const dlBtn = $('file-preview-download-btn');
+  if (!overlay || !bodyEl) return;
+
+  if (titleEl) titleEl.textContent = filename || 'Tệp đính kèm';
+  const metaParts = [];
+  if (fileSize) metaParts.push(fileSize);
+  if (sender) metaParts.push(`Người gửi: ${sender}`);
+  if (subEl) subEl.textContent = metaParts.join(' · ');
+  if (iconEl) iconEl.innerHTML = fileTypeIcon(mimeType, filename);
+  if (copyBtn) copyBtn.style.display = 'none';
+  if (saveAsBtn) saveAsBtn.onclick = () => saveFileWithLocation(url, filename, fileId);
+  if (dlBtn) {
+    dlBtn.href = url;
+    dlBtn.download = filename || 'file';
+    dlBtn.onclick = () => markFileDownloaded(fileId);
+  }
+  state.currentPreviewText = '';
+
+  bodyEl.innerHTML = '<div style="margin:auto;padding:32px;color:#cdd6f4;font-size:14px">Đang tải nội dung tệp...</div>';
+  overlay.classList.add('visible');
+
+  // 1. Nếu là file PDF -> nhúng trình đọc PDF trực tiếp trong iframe
+  if (mime === 'application/pdf' || ext === 'pdf') {
+    bodyEl.innerHTML = `<iframe class="file-preview-iframe" src="${url}?inline=true" title="${escHtml(filename)}"></iframe>`;
+    return;
+  }
+
+  // 2. Nếu là file Audio -> hiển thị trình phát âm thanh trong modal
+  if (mime.startsWith('audio/') || ['mp3','wav','ogg','oga','m4a'].includes(ext)) {
+    bodyEl.innerHTML = `<div style="margin:auto;padding:40px;text-align:center">
+      <audio src="${url}" controls autoplay style="width:min(420px,80vw)"></audio>
+    </div>`;
+    return;
+  }
+
+  // 3. Đọc trực tiếp luồng byte của file từ endpoint có sẵn GET /api/files/{fileId} ngay trên trình duyệt
+  // (hoạt động tức thì mà không cần khởi động lại Server Java!)
+  try {
+    let data = null;
+    // Thử gọi /preview trước nếu server đã build bản mới, nếu 404 Not Found thì tự đọc và giải mã trực tiếp từ GET /api/files/{fileId}
+    try {
+      const pRes = await fetch(`${url}/preview`);
+      if (pRes.ok) data = await pRes.json();
+    } catch (_) {}
+
+    if (!data) {
+      data = await parseFilePreviewClientSide(url, filename, ext, mime);
+    }
+
+    if (data.mode === 'docx') {
+      state.currentPreviewText = data.content || '';
+      if (copyBtn && state.currentPreviewText) copyBtn.style.display = 'inline-flex';
+      bodyEl.innerHTML = `<div class="file-preview-doc-wrap">${escHtml(data.content || '(Tệp Word trống)')}</div>`;
+      return;
+    }
+
+    if (data.mode === 'zip') {
+      const entries = data.entries || [];
+      const rows = entries.map(e => `
+        <div class="file-preview-zip-row">
+          <span>${e.dir ? '📁 ' : '📄 '}${escHtml(e.name)}</span>
+          <span style="color:#758398">${escHtml(e.size || (e.dir ? 'Thư mục' : ''))}</span>
+        </div>
+      `).join('') || '<div style="padding:20px;color:#758398;text-align:center">Tệp ZIP rỗng</div>';
+      bodyEl.innerHTML = `<div class="file-preview-zip-list">
+        <div style="font-size:13px;font-weight:700;color:#4a586e;margin-bottom:10px">Danh sách tệp bên trong gói nén (${entries.length} mục):</div>
+        ${rows}
+      </div>`;
+      return;
+    }
+
+    if (data.mode === 'csv') {
+      state.currentPreviewText = data.content || '';
+      if (copyBtn) copyBtn.style.display = 'inline-flex';
+      const sep = ext === 'tsv' ? '\t' : ',';
+      const lines = (data.content || '').split(/\r?\n/).filter(l => l.trim().length > 0).slice(0, 200);
+      if (lines.length > 0) {
+        const headerCells = lines[0].split(sep).map(c => `<th>${escHtml(c.replace(/^"|"$/g, ''))}</th>`).join('');
+        const bodyRows = lines.slice(1).map(line => {
+          const cols = line.split(sep).map(c => `<td>${escHtml(c.replace(/^"|"$/g, ''))}</td>`).join('');
+          return `<tr>${cols}</tr>`;
+        }).join('');
+        bodyEl.innerHTML = `<div class="file-preview-table-wrap">
+          <table class="file-preview-table">
+            <thead><tr>${headerCells}</tr></thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>`;
+        return;
+      }
+    }
+
+    if (data.mode === 'text') {
+      const content = data.content || '';
+      state.currentPreviewText = content;
+      if (copyBtn) copyBtn.style.display = 'inline-flex';
+      const lines = content.split(/\r?\n/);
+      const lineNumbers = lines.map((_, i) => i + 1).join('\n');
+      const truncNote = data.truncated
+        ? `<div style="padding:8px 16px;background:#313244;color:#f9e2af;font-size:12px">Tệp lớn: Đang hiển thị 512 KB đầu tiên. Tải xuống để xem toàn bộ.</div>`
+        : '';
+      bodyEl.innerHTML = `${truncNote}<div class="file-preview-code-wrap">
+        <pre class="file-preview-lines">${lineNumbers}</pre>
+        <pre class="file-preview-code">${escHtml(content)}</pre>
+      </div>`;
+      return;
+    }
+
+    // Định dạng nhị phân khác không thể hiển thị dạng chữ
+    bodyEl.innerHTML = `<div style="margin:auto;padding:40px;text-align:center;color:#cdd6f4">
+      <div style="margin-bottom:14px;display:inline-block">${fileTypeIcon(mimeType, filename)}</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">${escHtml(filename)}</div>
+      <div style="font-size:13px;color:#a6adc8;margin-bottom:18px">Định dạng tệp nhị phân này không hỗ trợ xem văn bản trực tiếp. Vui lòng tải xuống để mở bằng ứng dụng chuyên dụng.</div>
+      <a class="btn-primary" href="${url}" download="${escHtml(filename)}" style="text-decoration:none;display:inline-block" onclick="markFileDownloaded('${escHtml(fileId)}')">Tải tệp xuống máy</a>
+    </div>`;
+  } catch (err) {
+    bodyEl.innerHTML = `<div style="margin:auto;padding:32px;color:#f38ba8;text-align:center">Lỗi tải xem trước: ${escHtml(err.message || 'Không xác định')}</div>`;
+  }
+}
+
+function formatBytesHuman(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  const kb = bytes / 1024;
+  if (kb < 1024) return kb.toFixed(1) + ' KB';
+  return (kb / 1024).toFixed(1) + ' MB';
+}
+
+async function parseZipBufferClientSide(buffer, extractEntryName = null) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  const decoder = new TextDecoder('utf-8');
+  const entries = [];
+  let extractedText = null;
+  let offset = 0;
+
+  while (offset + 30 <= bytes.length) {
+    const sig = view.getUint32(offset, true);
+    if (sig !== 0x04034b50) break; // Local file header signature
+    const flags = view.getUint16(offset + 6, true);
+    const method = view.getUint16(offset + 8, true);
+    const compSize = view.getUint32(offset + 18, true);
+    const uncompSize = view.getUint32(offset + 22, true);
+    const nameLen = view.getUint16(offset + 26, true);
+    const extraLen = view.getUint16(offset + 28, true);
+    const nameBytes = bytes.subarray(offset + 30, offset + 30 + nameLen);
+    const name = decoder.decode(nameBytes);
+    const dataStart = offset + 30 + nameLen + extraLen;
+    // Nếu bit 3 của flags bật (Data Descriptor) và compSize == 0 thì dừng quét tuần tự và dùng Central Directory ở cuối file
+    if ((flags & 8) !== 0 && compSize === 0) break;
+
+    const isDir = name.endsWith('/');
+    entries.push({ name, dir: isDir, size: isDir ? '' : formatBytesHuman(uncompSize) });
+
+    if (extractEntryName && name === extractEntryName && dataStart + compSize <= bytes.length) {
+      const rawSlice = bytes.subarray(dataStart, dataStart + compSize);
+      if (method === 0) {
+        extractedText = decoder.decode(rawSlice);
+      } else if (method === 8 && typeof DecompressionStream !== 'undefined') {
+        const ds = new DecompressionStream('deflate-raw');
+        const writer = ds.writable.getWriter();
+        writer.write(rawSlice);
+        writer.close();
+        const decompBuf = await new Response(ds.readable).arrayBuffer();
+        extractedText = decoder.decode(new Uint8Array(decompBuf));
+      }
+    }
+    offset = dataStart + compSize;
+  }
+
+  // Nếu file ZIP/DOCX dùng Data Descriptor (compSize ở Local Header = 0), đọc Central Directory ở cuối file
+  if ((entries.length === 0 || (extractEntryName && extractedText === null)) && bytes.length >= 22) {
+    let eocdOffset = -1;
+    const minSearch = Math.max(0, bytes.length - 65557);
+    for (let i = bytes.length - 22; i >= minSearch; i--) {
+      if (view.getUint32(i, true) === 0x06054b50) { eocdOffset = i; break; }
+    }
+    if (eocdOffset !== -1) {
+      const cdCount = view.getUint16(eocdOffset + 10, true);
+      let cdPos = view.getUint32(eocdOffset + 16, true);
+      entries.length = 0;
+      for (let i = 0; i < cdCount && cdPos + 46 <= bytes.length; i++) {
+        if (view.getUint32(cdPos, true) !== 0x02014b50) break;
+        const method = view.getUint16(cdPos + 10, true);
+        const compSize = view.getUint32(cdPos + 20, true);
+        const uncompSize = view.getUint32(cdPos + 24, true);
+        const nameLen = view.getUint16(cdPos + 28, true);
+        const extraLen = view.getUint16(cdPos + 30, true);
+        const commentLen = view.getUint16(cdPos + 32, true);
+        const localHdrOffset = view.getUint32(cdPos + 42, true);
+        const name = decoder.decode(bytes.subarray(cdPos + 46, cdPos + 46 + nameLen));
+        const isDir = name.endsWith('/');
+        entries.push({ name, dir: isDir, size: isDir ? '' : formatBytesHuman(uncompSize) });
+
+        if (extractEntryName && name === extractEntryName && localHdrOffset + 30 <= bytes.length) {
+          const lNameLen = view.getUint16(localHdrOffset + 26, true);
+          const lExtraLen = view.getUint16(localHdrOffset + 28, true);
+          const dataStart = localHdrOffset + 30 + lNameLen + lExtraLen;
+          if (dataStart + compSize <= bytes.length) {
+            const rawSlice = bytes.subarray(dataStart, dataStart + compSize);
+            if (method === 0) {
+              extractedText = decoder.decode(rawSlice);
+            } else if (method === 8 && typeof DecompressionStream !== 'undefined') {
+              const ds = new DecompressionStream('deflate-raw');
+              const writer = ds.writable.getWriter();
+              writer.write(rawSlice);
+              writer.close();
+              const decompBuf = await new Response(ds.readable).arrayBuffer();
+              extractedText = decoder.decode(new Uint8Array(decompBuf));
+            }
+          }
+        }
+        cdPos += 46 + nameLen + extraLen + commentLen;
+      }
+    }
+  }
+  return { entries, extractedText };
+}
+
+async function parseFilePreviewClientSide(url, filename, ext, mime) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Không tìm thấy tệp trên máy chủ (' + res.status + ')');
+  const buf = await res.arrayBuffer();
+
+  if (ext === 'docx') {
+    const { extractedText } = await parseZipBufferClientSide(buf, 'word/document.xml');
+    if (extractedText !== null) {
+      const cleaned = extractedText
+        .replace(/<\/w:p>/g, '\n')
+        .replace(/<w:tab[^>]*\/>/g, '\t')
+        .replace(/<w:br[^>]*\/>/g, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+        .trim();
+      return { mode: 'docx', filename, content: cleaned };
+    }
+  }
+
+  if (ext === 'zip') {
+    const { entries } = await parseZipBufferClientSide(buf, null);
+    return { mode: 'zip', filename, entries };
+  }
+
+  const maxBytes = 512 * 1024;
+  const truncated = buf.byteLength > maxBytes;
+  const bytes = new Uint8Array(truncated ? buf.slice(0, maxBytes) : buf);
+
+  let nullBytes = 0;
+  const sampleLen = Math.min(bytes.length, 4096);
+  for (let i = 0; i < sampleLen; i++) {
+    if (bytes[i] === 0) nullBytes++;
+  }
+  const textExts = new Set([
+    'txt','md','log','csv','tsv','json','xml','yaml','yml','properties','ini','conf','env',
+    'java','js','jsx','ts','tsx','py','c','cpp','h','hpp','cs','go','rs','php','rb','kt','swift',
+    'html','htm','css','scss','sql','sh','bat','ps1','gradle','gitignore'
+  ]);
+  if (!textExts.has(ext) && nullBytes > 2) {
+    return { mode: 'unsupported', filename, mimeType: mime };
+  }
+  const text = new TextDecoder('utf-8').decode(bytes);
+  return {
+    mode: (ext === 'csv' || ext === 'tsv') ? 'csv' : 'text',
+    ext,
+    filename,
+    truncated,
+    content: text,
+  };
+}
+
+function closeFilePreviewModal() {
+  $('file-preview-modal-overlay')?.classList.remove('visible');
+  const bodyEl = $('file-preview-body');
+  if (bodyEl) bodyEl.innerHTML = '';
+  state.currentPreviewText = '';
+}
+
+async function copyFilePreviewContent() {
+  if (!state.currentPreviewText) return;
+  try {
+    await navigator.clipboard.writeText(state.currentPreviewText);
+    showToast('Đã sao chép nội dung tệp vào bộ nhớ tạm!', 'success');
+  } catch (_) {
+    showToast('Không thể sao chép nội dung.', 'error');
+  }
 }
 
 // ─── Audio player controls ────────────────────────────────────────────────────
@@ -3385,13 +3697,18 @@ function renderRightPanel() {
         const isAudio = (m.mimeType || '').startsWith('audio/');
         const sender = m.from || m.username || 'Không rõ';
         const rawName = (m.filename || 'file').replace(/'/g, "\\'");
+        const safeMime = (m.mimeType || '').replace(/'/g, "\\'");
+        const safeSize = (m.fileSize || '').replace(/'/g, "\\'");
+        const safeSender = sender.replace(/'/g, "\\'");
+        const previewCall = `openFilePreviewModal('${escHtml(m.fileId)}','${rawName}','${safeMime}','${safeSize}','${safeSender}')`;
         return `<div class="shared-file-row">
-          <div class="shared-file-ico"${isAudio ? ' style="width:36px!important;height:36px;background:#eaf3ff!important;color:#0866d6;border-radius:9px"' : ''}>${isAudio ? UI_ICONS.music : fileTypeIcon(m.mimeType, m.filename)}</div>
-          <div class="shared-file-info">
+          <div class="shared-file-ico"${isAudio ? ' style="width:36px!important;height:36px;background:#eaf3ff!important;color:#0866d6;border-radius:9px;cursor:pointer"' : ' style="cursor:pointer"'} title="Nhấn để xem nội dung tệp" onclick="${previewCall}">${isAudio ? UI_ICONS.music : fileTypeIcon(m.mimeType, m.filename)}</div>
+          <div class="shared-file-info" title="Nhấn để xem nội dung tệp" onclick="${previewCall}">
             <div class="shared-file-name" title="${escHtml(m.filename || 'File')}">${escHtml(m.filename || 'File')}</div>
             <div class="shared-file-meta">${escHtml(sender)} · ${escHtml(m.fileSize || '')}</div>
           </div>
           <div style="display:flex;gap:4px">
+            <button type="button" class="shared-file-dl" title="Xem nội dung tệp" onclick="${previewCall}">${UI_ICONS.eye}</button>
             ${!isAudio ? `<button type="button" class="shared-file-dl" title="Chọn vị trí lưu" onclick="saveFileWithLocation('${url}','${rawName}','${escHtml(m.fileId)}')">${UI_ICONS.folderSave}</button>` : ''}
             <a class="shared-file-dl" href="${url}" download="${escHtml(m.filename || 'file')}" title="Tải xuống" onclick="markFileDownloaded('${escHtml(m.fileId)}')">${UI_ICONS.download}</a>
           </div>
@@ -4720,6 +5037,7 @@ document.addEventListener('keydown', e => {
     closeMessageMenu();
     if (state.multiSelectMode) exitMultiSelectMode();
     closeAvatarActionMenu();
+    closeFilePreviewModal();
     closeGroupModal();
     closeGroupActionModal();
     closeImageViewer();
@@ -4734,6 +5052,7 @@ document.addEventListener('keydown', e => {
 
 // Modal backdrop close
 $('group-modal-overlay')?.addEventListener('click', e => { if (e.target === $('group-modal-overlay')) closeGroupModal(); });
+$('file-preview-modal-overlay')?.addEventListener('click', e => { if (e.target === $('file-preview-modal-overlay')) closeFilePreviewModal(); });
 $('group-action-modal-overlay')?.addEventListener('click', e => { if (e.target === $('group-action-modal-overlay')) closeGroupActionModal(); });
 $('add-friend-modal-overlay')?.addEventListener('click', e => { if (e.target === $('add-friend-modal-overlay')) closeAddFriendModal(); });
 $('freq-modal-overlay')?.addEventListener('click', e => { if (e.target === $('freq-modal-overlay')) closeFriendReqModal(); });
@@ -4742,7 +5061,7 @@ function closeFriendReqModal() { $('freq-modal-overlay')?.classList.remove('visi
 
 // ─── Global expose ────────────────────────────────────────────────────────────
 Object.assign(window, {
-  markFileDownloaded, saveFileWithLocation,
+  markFileDownloaded, saveFileWithLocation, openFilePreviewModal, closeFilePreviewModal, copyFilePreviewContent,
   selectConversation, switchTab, switchContactsSubView, setContactsSearch, setContactsSort, toggleRpSection, toggleRpShowAll, enterSidebarSearch, exitSidebarSearch, openSearchConvTarget, clearRecentSearches, saveRecentSearch, openGroupModal, closeGroupModal, submitCreateGroup,
   logout, cancelSessionRestore, openImageViewer, openVideoViewer, closeImageViewer, stepMediaViewer, showPanel,
   toggleRightPanel, closeRightPanel, openRightPanelMembers, openRightPanelManage, backToRightPanelInfo, openRightPanelMemberMenu, toggleUserMenu, closeUserMenu, switchRpTab, toggleGroupSetting, togglePinConversation, toggleProfilePageForChat,
