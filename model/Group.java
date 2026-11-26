@@ -40,6 +40,17 @@ public class Group {
     public void removeMember(String username) { members.remove(username); }
     public Instant getCreatedAt() { return createdAt; }
 
+    /** Tính địa chỉ IP Multicast lớp D (239.255.X.Y) duy nhất cho nhóm dựa trên groupId. */
+    public String getMulticastIp() {
+        int hash = (id != null ? id.hashCode() : 0) & 0xFFFF;
+        int octet3 = ((hash >> 8) & 0xFE);
+        if (octet3 == 0) octet3 = 1;
+        int octet4 = (hash & 0xFE);
+        if (octet4 <= 1) octet4 = 2;
+        if (octet4 >= 255) octet4 = 254;
+        return "239.255." + octet3 + "." + octet4;
+    }
+
     /** Trả về object đơn giản để serialize thành JSON cho client. */
     public java.util.Map<String, Object> toMap() {
         java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
@@ -48,6 +59,7 @@ public class Group {
         m.put("createdBy", createdBy);
         m.put("members", members);
         m.put("avatarPath", avatarPath);
+        m.put("multicastIp", getMulticastIp());
         m.put("createdAt", createdAt.toString());
         return m;
     }

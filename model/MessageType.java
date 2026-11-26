@@ -62,5 +62,6 @@ public enum MessageType {
     @SerializedName("delete_message_for_me") DELETE_MESSAGE_FOR_ME,
     @SerializedName("message_hidden") MESSAGE_HIDDEN,
     @SerializedName("conversation_list") CONVERSATION_LIST,
-    @SerializedName("blocked_users") BLOCKED_USERS
+    @SerializedName("blocked_users") BLOCKED_USERS,
+    @SerializedName("p2p_signal") P2P_SIGNAL
 }

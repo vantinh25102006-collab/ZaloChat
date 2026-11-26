@@ -42,21 +42,38 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     // conversationId → list of messages (in-memory cache, giới hạn 200 tin)
     private final ConcurrentHashMap<String, LinkedList<ChatMessage>> history = new ConcurrentHashMap<>();
 
-    // Dùng chung tài khoản, trạng thái online và event bus với TCP Server.
+    // Dùng chung tài khoản, trạng thái online, event bus và P2P/Multicast Manager.
     private final server.UserStore userStore;
     private final webapp.runtime.ChatPresenceRegistry presence;
     private final webapp.runtime.ChatMessageBus messageBus;
+    private final webapp.runtime.P2PAndMulticastManager p2pMulticast;
     private final DatabaseManager db;
 
     public ChatWebSocketHandler(server.UserStore userStore,
                                 webapp.runtime.ChatPresenceRegistry presence,
-                                webapp.runtime.ChatMessageBus messageBus) {
+                                webapp.runtime.ChatMessageBus messageBus,
+                                webapp.runtime.P2PAndMulticastManager p2pMulticast) {
         this.userStore = userStore;
         this.presence = presence;
         this.messageBus = messageBus;
+        this.p2pMulticast = p2pMulticast;
         this.db = DatabaseManager.getInstance();
         this.messageBus.subscribe(this::onSharedMessage);
+        this.p2pMulticast.setDeliveryCallback(this::deliverRawJsonToUser);
         loadGroupsFromDb();
+    }
+
+    private void deliverRawJsonToUser(String username, String jsonPayload) {
+        WebSocketSession ws = sessions.get(username);
+        if (ws != null && ws.isOpen()) {
+            try {
+                synchronized (this) {
+                    ws.sendMessage(new TextMessage(jsonPayload));
+                }
+            } catch (IOException e) {
+                System.err.println("[WS] Lỗi chuyển gói tin P2P/Multicast tới " + username + ": " + e.getMessage());
+            }
+        }
     }
 
     private void onSharedMessage(ChatMessage message) {
@@ -82,6 +99,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         String username = getUsername(session);
         if (username != null && sessions.remove(username, session)) {
+            p2pMulticast.unregisterUserNode(username);
             presence.logout(username);
             broadcastSystem(username + " đã đăng xuất.");
             broadcastUserList();
@@ -146,6 +164,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             case GROUP_TRANSFER_OWNER -> handleGroupTransferOwner(session, json);
             case GROUP_LEAVE         -> handleGroupLeave(session, json);
             case GROUP_DELETE        -> handleGroupDelete(session, json);
+            case P2P_SIGNAL          -> handleP2PSignal(session, json);
             default                  -> sendError(session, "Loại thông điệp không được hỗ trợ: " + typeStr);
         }
     }
@@ -189,7 +208,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
 
         session.getAttributes().put("username", username);
-        send(session, ChatMessage.loginResult(true, 0, "Đăng nhập thành công. Chào " + username + "!"));
+        int p2pPort = p2pMulticast.registerUserNode(username);
+        send(session, ChatMessage.loginResult(true, p2pPort, "Đăng nhập thành công. Chào " + username + "!"));
 
         sendUserList(session);
         sendGroupListFromDb(session, username);
@@ -200,12 +220,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         broadcastSystem(username + " đã tham gia.");
         broadcastUserList();
-        System.out.println("[WS] Login: " + username);
+        System.out.println("[WS] Login: " + username + " (P2P port: " + p2pPort + ")");
     }
 
     private void handleDisconnect(WebSocketSession session) throws IOException {
         String username = getUsername(session);
         if (username != null && sessions.remove(username, session)) {
+            p2pMulticast.unregisterUserNode(username);
             presence.logout(username);
             broadcastSystem(username + " đã đăng xuất.");
             broadcastUserList();
@@ -299,9 +320,37 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         addHistory(msg.getConversationId(), msg);
 
-        WebSocketSession toSession = sessions.get(to);
-        if (toSession != null && toSession.isOpen()) send(toSession, msg);
+        // Nếu trình duyệt đã gửi trực tiếp qua kênh WebRTC P2P DataChannel (p2pDelivered=true),
+        // không gửi lặp lại xuống người nhận; ngược lại truyền trực tiếp qua P2P TCP Socket Node của 2 Peer.
+        boolean browserP2pDelivered = json.has("p2pDelivered") && json.get("p2pDelivered").getAsBoolean();
+        String msgJson = gson.toJson(msg);
+        if (!browserP2pDelivered) {
+            boolean sentViaP2pSocket = p2pMulticast.sendP2PDirectMessage(from, to, msgJson);
+            if (!sentViaP2pSocket) {
+                WebSocketSession toSession = sessions.get(to);
+                if (toSession != null && toSession.isOpen()) send(toSession, msg);
+            }
+        }
         send(session, msg);
+    }
+
+    /** Chuyển tiếp tín hiệu bắt tay WebRTC P2P (SDP Offer/Answer/ICE Candidate) giữa 2 trình duyệt. */
+    private void handleP2PSignal(WebSocketSession session, JsonObject json) throws IOException {
+        String from = requireAuth(session);
+        if (from == null) return;
+        String to = getString(json, "to");
+        if (to == null || to.isBlank()) return;
+        WebSocketSession targetSession = sessions.get(to);
+        if (targetSession != null && targetSession.isOpen()) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("type", "p2p_signal");
+            payload.put("from", from);
+            payload.put("to", to);
+            if (json.has("signalType")) payload.put("signalType", json.get("signalType").getAsString());
+            if (json.has("sdp")) payload.put("sdp", json.get("sdp"));
+            if (json.has("candidate")) payload.put("candidate", json.get("candidate"));
+            sendPayload(targetSession, payload);
+        }
     }
 
     private void attachReplyMetadata(ChatMessage msg, JsonObject json) {
@@ -332,6 +381,11 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         // Save to DB and create folder
         db.saveGroup(groupId, groupName, creator, members);
 
+        // Cho toàn bộ thành viên join vào địa chỉ UDP Multicast của nhóm (MulticastSocket.joinGroup)
+        for (String member : members) {
+            p2pMulticast.joinMulticastGroup(member, group);
+        }
+
         ChatMessage notify = new ChatMessage();
         notify.setType(MessageType.GROUP_CREATED);
         notify.setUsername(creator);
@@ -339,13 +393,11 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         notify.setGroupName(groupName);
         notify.setMembers(members);
         notify.setTimestamp(java.time.Instant.now().toString());
-        notify.setContent("Nhóm '" + groupName + "' được tạo bởi " + creator);
+        notify.setContent("Nhóm '" + groupName + "' được tạo bởi " + creator + " (Multicast " + group.getMulticastIp() + ":" + webapp.runtime.P2PAndMulticastManager.MULTICAST_PORT + ")");
 
-        for (String member : members) {
-            WebSocketSession ms = sessions.get(member);
-            if (ms != null && ms.isOpen()) send(ms, notify);
-        }
-        System.out.println("[WS] Group created: " + groupName + " (" + groupId + ") by " + creator);
+        // Phát thông báo tạo nhóm qua UDP Multicast tới các thành viên đã joinGroup
+        p2pMulticast.sendMulticastGroupMessage(creator, group, gson.toJson(notify));
+        System.out.println("[WS] Group created: " + groupName + " (" + groupId + ", Multicast " + group.getMulticastIp() + ") by " + creator);
     }
 
     private void handleGroupMessage(WebSocketSession session, JsonObject json) throws IOException {
@@ -368,10 +420,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         addHistory("group:" + groupId, msg);
 
-        for (String member : group.getMembers()) {
-            WebSocketSession ms = sessions.get(member);
-            if (ms != null && ms.isOpen()) send(ms, msg);
-        }
+        // Phát tin nhắn nhóm qua UDP Multicast (DatagramPacket -> MulticastSocket) tới địa chỉ Multicast của nhóm
+        p2pMulticast.sendMulticastGroupMessage(from, group, gson.toJson(msg));
     }
 
     private void handleFileShare(WebSocketSession session, JsonObject json) throws IOException {
@@ -387,21 +437,21 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (fileId == null || filename == null) { sendError(session, "Thiếu fileId hoặc filename."); return; }
 
         ChatMessage msg = ChatMessage.fileShare(from, to, groupId, fileId, filename, fileSize, mimeType);
+        String msgJson = gson.toJson(msg);
 
         if (groupId != null && !groupId.isBlank()) {
             Group group = groups.get(groupId);
             if (group == null) { sendError(session, "Nhóm không tồn tại."); return; }
             db.saveMessage(msg.getMessageId(), "group:" + groupId, from, null, "file_share", null, fileId, filename, fileSize, mimeType);
             addHistory("group:" + groupId, msg);
-            for (String member : group.getMembers()) {
-                WebSocketSession ms = sessions.get(member);
-                if (ms != null && ms.isOpen()) send(ms, msg);
-            }
+            p2pMulticast.sendMulticastGroupMessage(from, group, msgJson);
         } else if (to != null && !to.isBlank()) {
             db.saveMessage(msg.getMessageId(), msg.getConversationId(), from, to, "file_share", null, fileId, filename, fileSize, mimeType);
             addHistory(msg.getConversationId(), msg);
-            WebSocketSession toSession = sessions.get(to);
-            if (toSession != null && toSession.isOpen()) send(toSession, msg);
+            if (!p2pMulticast.sendP2PDirectMessage(from, to, msgJson)) {
+                WebSocketSession toSession = sessions.get(to);
+                if (toSession != null && toSession.isOpen()) send(toSession, msg);
+            }
             send(session, msg);
         } else {
             db.saveMessage(msg.getMessageId(), "global", from, null, "file_share", null, fileId, filename, fileSize, mimeType);
@@ -792,10 +842,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         payload.put("username", "SYSTEM");
         payload.put("content", content);
         payload.put("timestamp", now);
-        for (String member : g.getMembers()) {
-            WebSocketSession ms = sessions.get(member);
-            if (ms != null && ms.isOpen()) sendPayload(ms, payload);
-        }
+        p2pMulticast.sendMulticastGroupMessage("SYSTEM", g, gson.toJson(payload));
     }
 
     private void handleGroupAddMember(WebSocketSession session,JsonObject json)throws IOException{
@@ -822,6 +869,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             if (userStore.search(user).stream().noneMatch(u -> u.username().equals(user))) continue;
             g.addMember(user);
             db.addGroupMember(gid, user);
+            // Cho thành viên mới join vào địa chỉ UDP Multicast của nhóm (MulticastSocket.joinGroup)
+            p2pMulticast.joinMulticastGroup(user, g);
             added.add(user);
         }
         if (added.isEmpty()) { sendError(session, "Không có thành viên hợp lệ nào được thêm."); return; }
@@ -838,6 +887,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if (target.equals(me) || !g.hasMember(target)) { sendError(session, "Thành viên không hợp lệ."); return; }
         g.removeMember(target);
         db.removeGroupMember(gid, target);
+        // Cho thành viên bị xóa thoát khỏi nhóm UDP Multicast (MulticastSocket.leaveGroup)
+        p2pMulticast.leaveMulticastGroup(target, g);
         WebSocketSession targetSession = sessions.get(target);
         if (targetSession != null && targetSession.isOpen()) {
             sendPayload(targetSession, Map.of("type", "group_left", "groupId", gid, "kickedBy", me));
@@ -888,7 +939,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if(gid==null){sendError(session,"Thiếu groupId.");return;} Group g=groups.get(gid);
         if(g==null||!g.hasMember(me)){sendError(session,"Bạn không thuộc nhóm này.");return;}
         if(g.getCreatedBy().equals(me)){sendError(session,"Nhóm trưởng phải chuyển quyền quản trị cho thành viên khác trước khi rời nhóm.");return;}
-        g.removeMember(me);db.removeGroupMember(gid,me);broadcastGroupUpdate(g);
+        g.removeMember(me);db.removeGroupMember(gid,me);
+        // Thoát nhóm UDP Multicast bằng MulticastSocket.leaveGroup(...)
+        p2pMulticast.leaveMulticastGroup(me, g);
+        broadcastGroupUpdate(g);
         sendPayload(session,Map.of("type","group_left","groupId",gid));
         sendGroupSystemNotification(g, me + " đã rời nhóm");
     }
@@ -898,7 +952,10 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if(g==null||!g.getCreatedBy().equals(me)){sendError(session,"Chỉ nhóm trưởng mới được giải tán nhóm.");return;}
         if(!db.deleteGroup(gid,me)){sendError(session,"Không thể giải tán nhóm.");return;}
         groups.remove(gid);Map<String,Object> p=Map.of("type","group_deleted","groupId",gid);
-        for(String member:g.getMembers()){WebSocketSession s=sessions.get(member);if(s!=null&&s.isOpen())sendPayload(s,p);}
+        for(String member:g.getMembers()){
+            p2pMulticast.leaveMulticastGroup(member, g);
+            WebSocketSession s=sessions.get(member);if(s!=null&&s.isOpen())sendPayload(s,p);
+        }
     }
     private boolean canAccessConversation(String user,String conv){
         if(conv.startsWith("dm:"))return Arrays.asList(conv.substring(3).split(":")).contains(user);
@@ -906,13 +963,24 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         return "global".equals(conv);
     }
     private void broadcastConversation(String conv,Map<String,Object> payload)throws IOException{
-        if(conv.startsWith("group:")){Group g=groups.get(conv.substring(6));if(g!=null)for(String u:g.getMembers()){WebSocketSession s=sessions.get(u);if(s!=null&&s.isOpen())sendPayload(s,payload);}}
-        else if(conv.startsWith("dm:")){for(String u:conv.substring(3).split(":")){WebSocketSession s=sessions.get(u);if(s!=null&&s.isOpen())sendPayload(s,payload);}}
+        String jsonStr = gson.toJson(payload);
+        if(conv.startsWith("group:")){
+            Group g=groups.get(conv.substring(6));
+            if(g!=null) p2pMulticast.sendMulticastGroupMessage("SYSTEM", g, jsonStr);
+        }
+        else if(conv.startsWith("dm:")){
+            String[] pair = conv.substring(3).split(":");
+            for(String u : pair){
+                if(!p2pMulticast.sendP2PDirectMessage("SYSTEM", u, jsonStr)){
+                    WebSocketSession s=sessions.get(u);if(s!=null&&s.isOpen())sendPayload(s,payload);
+                }
+            }
+        }
         else for(WebSocketSession s:sessions.values())if(s.isOpen())sendPayload(s,payload);
     }
     private void broadcastGroupUpdate(Group g)throws IOException{
         Map<String,Object> p=new LinkedHashMap<>(g.toMap());p.put("type","group_updated");
-        for(String u:g.getMembers()){WebSocketSession s=sessions.get(u);if(s!=null&&s.isOpen())sendPayload(s,p);}
+        p2pMulticast.sendMulticastGroupMessage("SYSTEM", g, gson.toJson(p));
     }
     private synchronized void sendPayload(WebSocketSession session,Object payload)throws IOException{
         if(session!=null&&session.isOpen())session.sendMessage(new TextMessage(gson.toJson(payload)));
@@ -1037,6 +1105,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
         List<Object> userGroups = groups.values().stream()
                 .filter(g -> g.hasMember(username))
+                .peek(g -> p2pMulticast.joinMulticastGroup(username, g))
                 .map(Group::toMap)
                 .collect(Collectors.toList());
         ChatMessage msg = new ChatMessage();
@@ -1058,8 +1127,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** Cho phép FileController lấy danh sách session để gửi thông báo file. */
+    /** Cho phép FileController lấy danh sách session và P2P/Multicast Manager để gửi thông báo file. */
     public ConcurrentHashMap<String, WebSocketSession> getSessions() { return sessions; }
     public ConcurrentHashMap<String, Group> getGroups() { return groups; }
+    public webapp.runtime.P2PAndMulticastManager getP2pMulticast() { return p2pMulticast; }
     public void recordHistory(String convId, ChatMessage msg) { addHistory(convId, msg); }
 }

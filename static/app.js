@@ -53,6 +53,8 @@ const state = {
   profileRequests: new Set(),
   lastSeenMap: new Map(),
   pendingSentByTarget: new Map(),
+  p2pPort: null,
+  p2pPeers: new Map(), // peerUsername -> { pc: RTCPeerConnection, dc: RTCDataChannel, ready: boolean }
   replyTo: null,
 };
 
@@ -205,6 +207,7 @@ function handleServerMessage(msg) {
     case 'group_left':           onGroupDeleted(msg);           break;
     case 'posts_result':         onPostsResult(msg);              break;
     case 'profile_updated':      onProfileUpdated(msg); break;
+    case 'p2p_signal':           onP2PSignal(msg); break;
     case 'mute_conversation':    if(msg.muted) state.mutedConversations.add(msg.conversationId); else state.mutedConversations.delete(msg.conversationId); showToast(msg.muted?'Đã tắt thông báo.':'Đã bật thông báo.','success'); break;
     case 'error':                showToast(msg.content, 'error'); break;
   }
@@ -275,6 +278,7 @@ function onRegisterResult(msg) {
 function onLoginResult(msg) {
   if (msg.success) {
     state.username = dom.usernameInput.value.trim();
+    state.p2pPort = msg.clientId || null;
     dom.loginScreen.style.display = 'none';
     dom.chatScreen.classList.add('visible');
     dom.userAvatarBtn.textContent = state.username[0].toUpperCase();
@@ -444,12 +448,101 @@ function updateChatHeaderStatus() {
   if (!current) return;
   if (current.type === 'dm') {
     const online = state.onlineUsers.includes(current.name);
-    dom.chatHeaderStatus.textContent = formatPresenceStatus(current.name, online);
+    const baseStatus = formatPresenceStatus(current.name, online);
+    const peerEntry = state.p2pPeers.get(current.name);
+    const p2pTag = online ? (peerEntry?.ready ? ' · P2P DataChannel' : ' · P2P Direct') : '';
+    dom.chatHeaderStatus.textContent = baseStatus + p2pTag;
     dom.chatHeaderStatus.style.color = online ? '#2ecc71' : '#8893a4';
   } else if (current.type === 'group') {
-    const g = state.groups.get(state.currentConvId.replace('group:',''));
-    dom.chatHeaderStatus.textContent = `${g?.members?.length || 0} thành viên`;
+    const gid = state.currentConvId.replace('group:','');
+    const g = state.groups.get(gid);
+    const mcast = g?.multicastIp ? ` · Multicast ${g.multicastIp}:6789` : '';
+    dom.chatHeaderStatus.textContent = `${g?.members?.length || 0} thành viên${mcast}`;
     dom.chatHeaderStatus.style.color = '#0068ff';
+  }
+}
+
+// ─── WebRTC Peer-to-Peer (RTCDataChannel) cho Chat 1-vs-1 giữa 2 trình duyệt ──
+function setupP2PDataChannelEvents(peerUsername, dc) {
+  dc.onopen = () => {
+    const entry = state.p2pPeers.get(peerUsername);
+    if (entry) entry.ready = true;
+    console.log(`[P2P-WebRTC] RTCDataChannel đã mở trực tiếp với '${peerUsername}'`);
+    updateChatHeaderStatus();
+  };
+  dc.onclose = () => {
+    const entry = state.p2pPeers.get(peerUsername);
+    if (entry) entry.ready = false;
+    updateChatHeaderStatus();
+  };
+  dc.onmessage = e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg && msg.type === 'private_message') {
+        onPrivateMessage(msg);
+      }
+    } catch (err) {
+      console.error('[P2P-WebRTC] Lỗi đọc gói P2P:', err);
+    }
+  };
+}
+
+async function ensureP2PDataChannel(peerUsername) {
+  if (!peerUsername || peerUsername === state.username || typeof RTCPeerConnection === 'undefined') return;
+  if (!state.onlineUsers.includes(peerUsername)) return;
+  const existing = state.p2pPeers.get(peerUsername);
+  if (existing && (existing.ready || existing.pc.connectionState === 'connecting')) return;
+
+  try {
+    const pc = new RTCPeerConnection({ iceServers: [] });
+    const dc = pc.createDataChannel('zchat-p2p');
+    const entry = { pc, dc, ready: false };
+    state.p2pPeers.set(peerUsername, entry);
+    setupP2PDataChannelEvents(peerUsername, dc);
+
+    pc.onicecandidate = ev => {
+      if (ev.candidate) {
+        wsSend({ type: 'p2p_signal', to: peerUsername, signalType: 'candidate', candidate: ev.candidate });
+      }
+    };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    wsSend({ type: 'p2p_signal', to: peerUsername, signalType: 'offer', sdp: pc.localDescription });
+  } catch (err) {
+    console.warn('[P2P-WebRTC] Không thể khởi tạo RTCPeerConnection:', err);
+  }
+}
+
+async function onP2PSignal(msg) {
+  const from = msg.from;
+  if (!from || typeof RTCPeerConnection === 'undefined') return;
+  try {
+    let entry = state.p2pPeers.get(from);
+    if (msg.signalType === 'offer') {
+      if (entry?.pc) { try { entry.pc.close(); } catch (_) {} }
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      entry = { pc, dc: null, ready: false };
+      state.p2pPeers.set(from, entry);
+      pc.ondatachannel = ev => {
+        entry.dc = ev.channel;
+        setupP2PDataChannelEvents(from, ev.channel);
+      };
+      pc.onicecandidate = ev => {
+        if (ev.candidate) {
+          wsSend({ type: 'p2p_signal', to: from, signalType: 'candidate', candidate: ev.candidate });
+        }
+      };
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      wsSend({ type: 'p2p_signal', to: from, signalType: 'answer', sdp: pc.localDescription });
+    } else if (msg.signalType === 'answer' && entry?.pc) {
+      await entry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+    } else if (msg.signalType === 'candidate' && entry?.pc && msg.candidate) {
+      await entry.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+    }
+  } catch (err) {
+    console.warn('[P2P-WebRTC] Lỗi xử lý tín hiệu P2P:', err);
   }
 }
 
@@ -924,6 +1017,7 @@ function selectConversation(convId) {
     wsSend({ type: 'user_profile', username: conv.name });
     dom.chatHeaderAv.innerHTML = userAvatarInner(conv.name);
     updateStrangerBanner(conv.name);
+    ensureP2PDataChannel(conv.name);
   } else {
     const gid = convId.replace('group:', '');
     dom.chatHeaderAv.innerHTML = groupAvatarInner(gid, conv.name);
