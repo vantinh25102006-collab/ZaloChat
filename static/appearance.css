@@ -1,0 +1,383 @@
+:root {
+  color-scheme: light;
+  --zchat-message-font-size: 14px;
+  --zchat-bubble-width: 72%;
+}
+
+:root[data-zchat-theme="dark"] {
+  color-scheme: dark;
+  --white: #202734;
+  --gray-bg: #171d28;
+  --gray-mid: #354052;
+  --gray-dark: #a4afc0;
+  --gray-hover: #293344;
+  --text: #e7edf5;
+  --blue-light: #243650;
+  --blue-mid: #46658f;
+  --zchat-chat-bg: #171d28;
+}
+
+:root[data-zchat-theme="light"][data-zchat-chat-background="slate"] {
+  --zchat-chat-bg: #e7edf5;
+}
+
+:root[data-zchat-theme="light"][data-zchat-chat-background="warm"] {
+  --zchat-chat-bg: #f5efe5;
+}
+
+:root[data-zchat-theme="dark"][data-zchat-chat-background="slate"] {
+  --zchat-chat-bg: #182433;
+}
+
+:root[data-zchat-theme="dark"][data-zchat-chat-background="warm"] {
+  --zchat-chat-bg: #28241f;
+}
+
+:root[data-zchat-theme="dark"] body {
+  background: #111720;
+  color: var(--text);
+}
+
+:root[data-zchat-theme="dark"] #sidebar-left {
+  background: #111827;
+}
+
+:root[data-zchat-theme="dark"] #sidebar-conv,
+:root[data-zchat-theme="dark"] .conv-header,
+:root[data-zchat-theme="dark"] #chat-header,
+:root[data-zchat-theme="dark"] #input-bar,
+:root[data-zchat-theme="dark"] .right-panel,
+:root[data-zchat-theme="dark"] .modal-box,
+:root[data-zchat-theme="dark"] #emoji-picker {
+  background: #202734;
+  color: var(--text);
+  border-color: #354052;
+}
+
+:root[data-zchat-theme="dark"] #chat-main,
+:root[data-zchat-theme="dark"] #messages-container {
+  background: var(--zchat-chat-bg);
+}
+
+:root[data-zchat-theme="dark"] #empty-state {
+  background: var(--zchat-chat-bg);
+  color: #a4afc0;
+}
+
+:root[data-zchat-theme="dark"] #empty-state h3,
+:root[data-zchat-theme="dark"] #empty-state p {
+  color: #a4afc0;
+}
+
+:root[data-zchat-theme="dark"] .conv-item:hover,
+:root[data-zchat-theme="dark"] .group-member-row:hover,
+:root[data-zchat-theme="dark"] .option-action:hover,
+:root[data-zchat-theme="dark"] .avatar-popover-item:hover {
+  background: #293344;
+}
+
+:root[data-zchat-theme="dark"] .conv-item.active {
+  background: #25354c;
+}
+
+:root[data-zchat-theme="dark"] .conv-name,
+:root[data-zchat-theme="dark"] .conv-title,
+:root[data-zchat-theme="dark"] #panel-title,
+:root[data-zchat-theme="dark"] .chat-hdr-name,
+:root[data-zchat-theme="dark"] .modal-hdr h2,
+:root[data-zchat-theme="dark"] .option-action,
+:root[data-zchat-theme="dark"] .avatar-popover-head,
+:root[data-zchat-theme="dark"] .avatar-popover-item,
+:root[data-zchat-theme="dark"] .group-member-row,
+:root[data-zchat-theme="dark"] .profile-name,
+:root[data-zchat-theme="dark"] .profile-phone {
+  color: var(--text);
+}
+
+:root[data-zchat-theme="dark"] .msg-bubble,
+:root[data-zchat-theme="dark"] .message-item.theirs .msg-bubble,
+:root[data-zchat-theme="dark"] .reaction-picker,
+:root[data-zchat-theme="dark"] .msg-reactions,
+:root[data-zchat-theme="dark"] .msg-reaction,
+:root[data-zchat-theme="dark"] .avatar-action-popover,
+:root[data-zchat-theme="dark"] .shared-file-dl,
+:root[data-zchat-theme="dark"] .audio-dl,
+:root[data-zchat-theme="dark"] .gm-btn,
+:root[data-zchat-theme="dark"] .modal-input,
+:root[data-zchat-theme="dark"] #msg-search-input {
+  background: #293344;
+  color: var(--text);
+  border-color: #43516a;
+}
+
+:root[data-zchat-theme="dark"] .message-item.mine .msg-bubble {
+  background: #245caa;
+  color: #fff;
+}
+
+:root[data-zchat-theme="dark"] #search-input,
+:root[data-zchat-theme="dark"] .emoji-search,
+:root[data-zchat-theme="dark"] .input-row {
+  background: #171d28;
+  color: var(--text);
+}
+
+:root[data-zchat-theme="dark"] #message-input {
+  color: var(--text);
+}
+
+:root[data-zchat-theme="dark"] #message-input::placeholder,
+:root[data-zchat-theme="dark"] #search-input::placeholder {
+  color: #9aa7ba;
+}
+
+:root[data-zchat-theme="dark"] .conv-tab,
+:root[data-zchat-theme="dark"] .conv-last,
+:root[data-zchat-theme="dark"] .conv-time,
+:root[data-zchat-theme="dark"] .msg-time,
+:root[data-zchat-theme="dark"] .msg-day-label {
+  color: #a4afc0;
+}
+
+:root[data-zchat-theme="dark"] .conv-tabs,
+:root[data-zchat-theme="dark"] .modal-hdr,
+:root[data-zchat-theme="dark"] .modal-footer,
+:root[data-zchat-theme="dark"] #input-bar {
+  border-color: #354052;
+}
+
+:root[data-zchat-theme="dark"] .msg-time-break,
+:root[data-zchat-theme="dark"] .msg-day-label {
+  background: #2a3444;
+  color: #c4cede;
+}
+
+:root[data-zchat-theme="dark"] .msg-reaction b {
+  color: #d7dfeb;
+}
+
+:root[data-zchat-theme="dark"] .audio-player,
+:root[data-zchat-theme="dark"] .file-card,
+:root[data-zchat-theme="dark"] .shared-file-item {
+  background: #293344;
+  color: var(--text);
+  border-color: #43516a;
+}
+
+:root[data-zchat-theme="dark"] .stranger-banner {
+  filter: brightness(.78);
+}
+
+.message-item .msg-bubble {
+  font-size: var(--zchat-message-font-size) !important;
+}
+
+.message-item .msg-body,
+.message-item:has(.msg-image-only) .msg-body {
+  max-width: min(var(--zchat-bubble-width), calc(100% - 42px)) !important;
+}
+
+#messages-container,
+#chat-main {
+  background: var(--zchat-chat-bg, #f0f2f5);
+}
+
+.appearance-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(9 15 25 / 55%);
+}
+
+.appearance-overlay[hidden] {
+  display: none;
+}
+
+.appearance-dialog {
+  width: min(460px, 100%);
+  max-height: min(720px, 92vh);
+  overflow: auto;
+  border: 1px solid #dfe5ef;
+  border-radius: 16px;
+  background: #fff;
+  color: #172033;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 28%);
+}
+
+.appearance-header,
+.appearance-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+}
+
+.appearance-header {
+  border-bottom: 1px solid #e8edf4;
+}
+
+.appearance-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.appearance-header p {
+  margin: 4px 0 0;
+  color: #758096;
+  font-size: 12px;
+}
+
+.appearance-close {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 24px;
+}
+
+.appearance-content {
+  display: grid;
+  gap: 18px;
+  padding: 20px 22px;
+}
+
+.appearance-field,
+.appearance-range {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.appearance-field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid #d8dfeb;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+
+.appearance-range > span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.appearance-range output {
+  color: #0866d6;
+  font-variant-numeric: tabular-nums;
+}
+
+.appearance-range input {
+  width: 100%;
+  accent-color: #0866d6;
+}
+
+.appearance-shortcuts {
+  display: grid;
+  gap: 9px;
+  padding-top: 15px;
+  border-top: 1px solid #e8edf4;
+}
+
+.appearance-shortcuts h3 {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+
+.appearance-shortcuts > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.appearance-shortcuts > div span {
+  margin-left: auto;
+  color: #758096;
+}
+
+.appearance-shortcuts kbd {
+  padding: 3px 6px;
+  border: 1px solid #d8dfeb;
+  border-radius: 5px;
+  background: #f5f7fa;
+  font: inherit;
+  font-size: 11px;
+}
+
+.appearance-footer {
+  border-top: 1px solid #e8edf4;
+}
+
+.appearance-reset,
+.appearance-done {
+  min-height: 36px;
+  padding: 7px 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.appearance-reset {
+  border: 1px solid #d8dfeb;
+  background: transparent;
+  color: inherit;
+}
+
+.appearance-done {
+  border: 1px solid #0866d6;
+  background: #0866d6;
+  color: #fff;
+}
+
+:root[data-zchat-theme="dark"] .appearance-dialog {
+  border-color: #354052;
+  background: #202734;
+  color: #e7edf5;
+}
+
+:root[data-zchat-theme="dark"] .appearance-header,
+:root[data-zchat-theme="dark"] .appearance-footer,
+:root[data-zchat-theme="dark"] .appearance-shortcuts {
+  border-color: #354052;
+}
+
+:root[data-zchat-theme="dark"] .appearance-field select,
+:root[data-zchat-theme="dark"] .appearance-shortcuts kbd {
+  border-color: #43516a;
+  background: #171d28;
+  color: #e7edf5;
+}
+
+:root[data-zchat-theme="dark"] .appearance-header p,
+:root[data-zchat-theme="dark"] .appearance-shortcuts > div span {
+  color: #a4afc0;
+}
+
+:root[data-zchat-theme="dark"] .appearance-reset {
+  border-color: #43516a;
+  color: #e7edf5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

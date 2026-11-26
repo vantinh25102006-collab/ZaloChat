@@ -2,6 +2,8 @@
 
 ## Chức năng được bổ sung trong bản này
 
+- Tùy chỉnh giao diện sáng/tối/theo hệ thống; đổi nền chat, cỡ chữ và độ rộng bong bóng tin nhắn. Tùy chọn được lưu riêng trên trình duyệt.
+- Phím tắt: `Ctrl+K` tìm cuộc trò chuyện, `Ctrl+Shift+D` đổi chế độ sáng/tối, `Alt+Shift+A` mở cài đặt giao diện và `Esc` đóng cài đặt.
 - Cảm xúc tin nhắn (❤️ 😂 👍 😮), mỗi người dùng chỉ có một cảm xúc trên một tin nhắn và có thể gỡ cảm xúc của mình.
 - Xóa tin nhắn ở phía mình hoặc thu hồi cho tất cả. Backend kiểm tra người gửi; chỉ người gửi mới thực hiện được hai thao tác này.
 - Xóa cuộc trò chuyện theo từng tài khoản; lịch sử của người còn lại không bị xóa.
