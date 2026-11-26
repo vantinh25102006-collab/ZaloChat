@@ -46,6 +46,7 @@ public class ChatMessage {
     private String lastSeen;      // thời gian truy cập gần nhất (ISO-8601)
     private java.util.Map<String, String> lastSeenMap; // username -> lastSeen ISO-8601
     private String avatarPath;    // đường dẫn avatar (user hoặc group)
+    private String sessionToken;  // token phiên web dùng để khôi phục khi F5
 
     public ChatMessage() { }
 
@@ -209,4 +210,6 @@ public class ChatMessage {
     public void setLastSeenMap(java.util.Map<String, String> lastSeenMap) { this.lastSeenMap = lastSeenMap; }
     public String getAvatarPath() { return avatarPath; }
     public void setAvatarPath(String avatarPath) { this.avatarPath = avatarPath; }
+    public String getSessionToken() { return sessionToken; }
+    public void setSessionToken(String sessionToken) { this.sessionToken = sessionToken; }
 }

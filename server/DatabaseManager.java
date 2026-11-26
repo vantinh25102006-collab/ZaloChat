@@ -23,6 +23,7 @@ public class DatabaseManager {
 
     private static DatabaseManager INSTANCE;
     private Connection conn;
+    private final java.security.SecureRandom sessionRandom = new java.security.SecureRandom();
 
     private DatabaseManager() throws SQLException {
         try {
@@ -110,10 +111,12 @@ public class DatabaseManager {
                     created_by  TEXT NOT NULL,
                     created_at  TEXT NOT NULL,
                     folder_path TEXT,
-                    avatar_path TEXT
+                    avatar_path TEXT,
+                    settings_json TEXT
                 )
             """);
             try { st.execute("ALTER TABLE groups ADD COLUMN avatar_path TEXT"); } catch (SQLException ignored) { }
+            try { st.execute("ALTER TABLE groups ADD COLUMN settings_json TEXT"); } catch (SQLException ignored) { }
 
             // Group members
             st.execute("""
@@ -162,6 +165,32 @@ public class DatabaseManager {
                 CREATE TABLE IF NOT EXISTS user_posts (
                     id TEXT PRIMARY KEY, username TEXT NOT NULL, content TEXT NOT NULL,
                     image_file_id TEXT, created_at TEXT NOT NULL
+                )
+            """);
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS web_sessions (
+                    token TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_used_at TEXT NOT NULL
+                )
+            """);
+            st.execute("CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions(username)");
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS pinned_messages (
+                    conv_id TEXT PRIMARY KEY,
+                    message_id TEXT NOT NULL,
+                    pinned_by TEXT NOT NULL,
+                    pinned_at TEXT NOT NULL
+                )
+            """);
+            st.execute("""
+                CREATE TABLE IF NOT EXISTS starred_messages (
+                    username TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    conv_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(username, message_id)
                 )
             """);
         }
@@ -511,7 +540,7 @@ public class DatabaseManager {
 
     public synchronized List<Map<String, Object>> getGroupsForUser(String username) {
         String sql = """
-            SELECT g.id, g.name, g.created_by, g.created_at, g.folder_path, g.avatar_path,
+            SELECT g.id, g.name, g.created_by, g.created_at, g.folder_path, g.avatar_path, g.settings_json,
                    GROUP_CONCAT(gm2.username) as members
             FROM groups g
             JOIN group_members gm ON g.id = gm.group_id AND gm.username = ?
@@ -528,6 +557,7 @@ public class DatabaseManager {
                 g.put("name", rs.getString("name"));
                 g.put("createdBy", rs.getString("created_by"));
                 g.put("avatarPath", rs.getString("avatar_path"));
+                g.put("settingsJson", rs.getString("settings_json"));
                 String members = rs.getString("members");
                 g.put("members", members != null ? List.of(members.split(",")) : List.of());
                 g.put("conversationDeleted", isConversationDeletedForUser(username,"group:"+rs.getString("id")));
@@ -537,6 +567,17 @@ public class DatabaseManager {
             System.err.println("[DB] getGroupsForUser error: " + e.getMessage());
         }
         return result;
+    }
+
+    public synchronized boolean updateGroupSettings(String groupId, String settingsJson) {
+        try (PreparedStatement ps = conn.prepareStatement("UPDATE groups SET settings_json=? WHERE id=?")) {
+            ps.setString(1, settingsJson);
+            ps.setString(2, groupId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("[DB] updateGroupSettings error: " + e.getMessage());
+            return false;
+        }
     }
 
     public synchronized String updateGroupInfo(String groupId, String newName, String newAvatarPath) {
@@ -623,8 +664,8 @@ public class DatabaseManager {
     public synchronized boolean hideMessageForUser(String messageId,String username) {
         try(PreparedStatement ps=conn.prepareStatement("""
             INSERT OR IGNORE INTO message_user_hidden(message_id,username)
-            SELECT id,? FROM messages WHERE id=? AND sender=?
-        """)){ps.setString(1,username);ps.setString(2,messageId);ps.setString(3,username);return ps.executeUpdate()>0;}
+            SELECT id,? FROM messages WHERE id=?
+        """)){ps.setString(1,username);ps.setString(2,messageId);return ps.executeUpdate()>0;}
         catch(SQLException e){System.err.println("[DB] hideMessageForUser: "+e.getMessage());return false;}
     }
 
@@ -661,6 +702,14 @@ public class DatabaseManager {
                     del.setString(1, messageId);
                     del.executeUpdate();
                 }
+                try (PreparedStatement delPin = conn.prepareStatement("DELETE FROM pinned_messages WHERE message_id=?")) {
+                    delPin.setString(1, messageId);
+                    delPin.executeUpdate();
+                }
+                try (PreparedStatement delStar = conn.prepareStatement("DELETE FROM starred_messages WHERE message_id=?")) {
+                    delStar.setString(1, messageId);
+                    delStar.executeUpdate();
+                }
                 String orphanFileId = null;
                 if (oldFileId != null && !oldFileId.isBlank()) {
                     boolean stillReferenced = false;
@@ -692,7 +741,8 @@ public class DatabaseManager {
 
     public synchronized List<Map<String,Object>> getMessagesForUser(String convId, int limit, String username) {
         String sql = """
-            SELECT id, conv_id, sender, receiver, type, content, file_id, filename, file_size, mime_type, created_at, reply_to_id, reply_to_username, reply_to_content
+            SELECT id, conv_id, sender, receiver, type, content, file_id, filename, file_size, mime_type, created_at, reply_to_id, reply_to_username, reply_to_content,
+                   EXISTS(SELECT 1 FROM starred_messages sm WHERE sm.message_id=m.id AND sm.username=?) AS is_starred
             FROM messages m WHERE conv_id = ? AND created_at > COALESCE(
               (SELECT deleted_at FROM conversation_user_state s WHERE s.username=? AND s.conv_id=m.conv_id),''
             ) AND NOT EXISTS (SELECT 1 FROM message_user_hidden h WHERE h.message_id=m.id AND h.username=?)
@@ -700,7 +750,7 @@ public class DatabaseManager {
         """;
         List<Map<String,Object>> result=new ArrayList<>();
         try(PreparedStatement ps=conn.prepareStatement(sql)){
-            ps.setString(1,convId);ps.setString(2,username);ps.setString(3,username);ps.setInt(4,limit);
+            ps.setString(1,username);ps.setString(2,convId);ps.setString(3,username);ps.setString(4,username);ps.setInt(5,limit);
             ResultSet rs=ps.executeQuery();
             while(rs.next()){
                 Map<String,Object> m=new LinkedHashMap<>();
@@ -709,7 +759,7 @@ public class DatabaseManager {
                 m.put("type",rs.getString("type"));m.put("content",rs.getString("content"));
                 m.put("fileId",rs.getString("file_id"));m.put("filename",rs.getString("filename"));
                 m.put("fileSize",rs.getString("file_size"));m.put("mimeType",rs.getString("mime_type"));
-                m.put("timestamp",rs.getString("created_at"));m.put("replyToId",rs.getString("reply_to_id"));m.put("replyToUsername",rs.getString("reply_to_username"));m.put("replyToContent",rs.getString("reply_to_content"));m.put("reactions",getReactions(rs.getString("id")));
+                m.put("timestamp",rs.getString("created_at"));m.put("replyToId",rs.getString("reply_to_id"));m.put("replyToUsername",rs.getString("reply_to_username"));m.put("replyToContent",rs.getString("reply_to_content"));m.put("starred",rs.getInt("is_starred")==1);m.put("reactions",getReactions(rs.getString("id")));
                 result.add(m);
             }
         }catch(SQLException e){System.err.println("[DB] getMessagesForUser: "+e.getMessage());}
@@ -984,11 +1034,160 @@ public class DatabaseManager {
                 String conv="group:"+groupId;
                 try(PreparedStatement p1=conn.prepareStatement("DELETE FROM message_reactions WHERE message_id IN (SELECT id FROM messages WHERE conv_id=?)")){p1.setString(1,conv);p1.executeUpdate();}
                 try(PreparedStatement p2=conn.prepareStatement("DELETE FROM message_user_hidden WHERE message_id IN (SELECT id FROM messages WHERE conv_id=?)")){p2.setString(1,conv);p2.executeUpdate();}
+                try(PreparedStatement pStar=conn.prepareStatement("DELETE FROM starred_messages WHERE conv_id=?")){pStar.setString(1,conv);pStar.executeUpdate();}
+                try(PreparedStatement pPin=conn.prepareStatement("DELETE FROM pinned_messages WHERE conv_id=?")){pPin.setString(1,conv);pPin.executeUpdate();}
                 try(PreparedStatement p3=conn.prepareStatement("DELETE FROM messages WHERE conv_id=?")){p3.setString(1,conv);p3.executeUpdate();}
                 try(PreparedStatement p4=conn.prepareStatement("DELETE FROM conversation_user_state WHERE conv_id=?")){p4.setString(1,conv);p4.executeUpdate();}
             }
             return changed>0;
         }catch(SQLException e){System.err.println("[DB] deleteGroup: "+e.getMessage());return false;}
+    }
+
+    // ── Persistent Web Sessions ─────────────────────────────────────────
+    public synchronized String createWebSession(String username) {
+        if (username == null || username.isBlank()) return null;
+        byte[] raw = new byte[32];
+        sessionRandom.nextBytes(raw);
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+        String now = java.time.Instant.now().toString();
+        String cutoff = java.time.Instant.now().minus(java.time.Duration.ofDays(30)).toString();
+        try (PreparedStatement clean = conn.prepareStatement("DELETE FROM web_sessions WHERE last_used_at < ?")) {
+            clean.setString(1, cutoff);
+            clean.executeUpdate();
+        } catch (SQLException ignored) { }
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO web_sessions(token, username, created_at, last_used_at) VALUES(?,?,?,?)")) {
+            ps.setString(1, token);
+            ps.setString(2, username);
+            ps.setString(3, now);
+            ps.setString(4, now);
+            ps.executeUpdate();
+            return token;
+        } catch (SQLException e) {
+            System.err.println("[DB] createWebSession: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public synchronized String validateAndTouchWebSession(String token) {
+        if (token == null || token.isBlank()) return null;
+        try (PreparedStatement ps = conn.prepareStatement("SELECT username FROM web_sessions WHERE token=?")) {
+            ps.setString(1, token);
+            ResultSet rs = ps.executeQuery();
+            if (!rs.next()) return null;
+            String username = rs.getString(1);
+            try (PreparedStatement upd = conn.prepareStatement("UPDATE web_sessions SET last_used_at=? WHERE token=?")) {
+                upd.setString(1, java.time.Instant.now().toString());
+                upd.setString(2, token);
+                upd.executeUpdate();
+            }
+            return username;
+        } catch (SQLException e) {
+            System.err.println("[DB] validateAndTouchWebSession: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public synchronized void revokeWebSession(String token) {
+        if (token == null || token.isBlank()) return;
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM web_sessions WHERE token=?")) {
+            ps.setString(1, token);
+            ps.executeUpdate();
+        } catch (SQLException ignored) { }
+    }
+
+    // ── Pin & Star Messages ─────────────────────────────────────────────
+    public synchronized boolean pinMessage(String convId, String messageId, String pinnedBy) {
+        if (convId == null || messageId == null || pinnedBy == null) return false;
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT INTO pinned_messages(conv_id, message_id, pinned_by, pinned_at)
+            SELECT conv_id, id, ?, ? FROM messages WHERE id=? AND conv_id=? AND type<>'revoked'
+            ON CONFLICT(conv_id) DO UPDATE SET message_id=excluded.message_id, pinned_by=excluded.pinned_by, pinned_at=excluded.pinned_at
+        """)) {
+            ps.setString(1, pinnedBy);
+            ps.setString(2, java.time.Instant.now().toString());
+            ps.setString(3, messageId);
+            ps.setString(4, convId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("[DB] pinMessage: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized boolean unpinMessage(String convId) {
+        if (convId == null) return false;
+        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM pinned_messages WHERE conv_id=?")) {
+            ps.setString(1, convId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.err.println("[DB] unpinMessage: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized Map<String, Object> getPinnedMessage(String convId, String forUsername) {
+        if (convId == null) return null;
+        String sql = """
+            SELECT p.conv_id, p.message_id, p.pinned_by, p.pinned_at,
+                   m.sender, m.type, m.content, m.filename, m.mime_type
+            FROM pinned_messages p
+            JOIN messages m ON m.id = p.message_id
+            WHERE p.conv_id = ? AND m.type <> 'revoked'
+              AND NOT EXISTS (SELECT 1 FROM message_user_hidden h WHERE h.message_id = m.id AND h.username = ?)
+        """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, convId);
+            ps.setString(2, forUsername != null ? forUsername : "");
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("conversationId", rs.getString("conv_id"));
+                out.put("messageId", rs.getString("message_id"));
+                out.put("pinnedBy", rs.getString("pinned_by"));
+                out.put("pinnedAt", rs.getString("pinned_at"));
+                out.put("sender", rs.getString("sender"));
+                out.put("type", rs.getString("type"));
+                out.put("content", rs.getString("content"));
+                out.put("filename", rs.getString("filename"));
+                out.put("mimeType", rs.getString("mime_type"));
+                return out;
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB] getPinnedMessage: " + e.getMessage());
+        }
+        return null;
+    }
+
+    public synchronized boolean toggleStarMessage(String username, String messageId, String convId) {
+        if (username == null || messageId == null || convId == null) return false;
+        try (PreparedStatement chk = conn.prepareStatement("SELECT 1 FROM starred_messages WHERE username=? AND message_id=?")) {
+            chk.setString(1, username);
+            chk.setString(2, messageId);
+            if (chk.executeQuery().next()) {
+                try (PreparedStatement del = conn.prepareStatement("DELETE FROM starred_messages WHERE username=? AND message_id=?")) {
+                    del.setString(1, username);
+                    del.setString(2, messageId);
+                    del.executeUpdate();
+                }
+                return false;
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB] toggleStarMessage check: " + e.getMessage());
+            return false;
+        }
+        try (PreparedStatement ins = conn.prepareStatement(
+                "INSERT INTO starred_messages(username, message_id, conv_id, created_at) VALUES(?,?,?,?)")) {
+            ins.setString(1, username);
+            ins.setString(2, messageId);
+            ins.setString(3, convId);
+            ins.setString(4, java.time.Instant.now().toString());
+            ins.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            System.err.println("[DB] toggleStarMessage insert: " + e.getMessage());
+            return false;
+        }
     }
 
     public Connection getConnection() { return conn; }

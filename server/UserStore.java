@@ -110,6 +110,10 @@ public class UserStore {
         return phonesByUsername.getOrDefault(username, "");
     }
 
+    public boolean exists(String username) {
+        return username != null && users.containsKey(username);
+    }
+
     public record RegistrationResult(boolean success, String message) {}
     public record UserSearchResult(String username, String phone) {}
 

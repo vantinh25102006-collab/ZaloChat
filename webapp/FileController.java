@@ -200,6 +200,7 @@ public class FileController {
     /** Download file theo fileId. */
     @GetMapping("/{fileId}")
     public ResponseEntity<?> download(@PathVariable String fileId,
+                                      @RequestParam(value = "inline", required = false, defaultValue = "false") boolean forceInline,
                                       @RequestHeader(value = "Range", required = false) String range) {
         FileMetadata meta = resolveMetadata(fileId);
         if (meta == null) return ResponseEntity.notFound().build();
@@ -209,7 +210,11 @@ public class FileController {
 
         try {
             long total = Files.size(filePath);
-            String disposition = (meta.mimeType() != null && (meta.mimeType().startsWith("image/") || meta.mimeType().startsWith("audio/") || meta.mimeType().startsWith("video/")))
+            boolean isInlineMime = meta.mimeType() != null && (meta.mimeType().startsWith("image/")
+                    || meta.mimeType().startsWith("audio/")
+                    || meta.mimeType().startsWith("video/")
+                    || meta.mimeType().equals("application/pdf"));
+            String disposition = (forceInline || isInlineMime)
                     ? "inline; filename=\"" + meta.filename() + "\""
                     : "attachment; filename=\"" + meta.filename() + "\"";
             if (range != null && range.startsWith("bytes=")) {
@@ -276,6 +281,129 @@ public class FileController {
         ));
     }
 
+    /** Xem trước nội dung file trực tiếp trên nền tảng (Text/Code, CSV, DOCX, ZIP). */
+    @GetMapping("/{fileId}/preview")
+    public ResponseEntity<?> preview(@PathVariable String fileId) {
+        FileMetadata meta = resolveMetadata(fileId);
+        if (meta == null) return ResponseEntity.notFound().build();
+        Path filePath = Path.of(meta.storedName());
+        if (!Files.exists(filePath)) return ResponseEntity.notFound().build();
+
+        String fname = meta.filename() != null ? meta.filename() : filePath.getFileName().toString();
+        String lower = fname.toLowerCase(Locale.ROOT);
+        String ext = getExtension(lower);
+
+        try {
+            // 1. Hỗ trợ đọc nội dung văn bản từ file Word (.docx)
+            if ("docx".equals(ext)) {
+                String docxText = extractDocxText(filePath);
+                Map<String, Object> res = new LinkedHashMap<>();
+                res.put("mode", "docx");
+                res.put("filename", fname);
+                res.put("fileSize", meta.fileSize());
+                res.put("content", docxText);
+                return ResponseEntity.ok(res);
+            }
+
+            // 2. Hỗ trợ xem cấu trúc danh sách file bên trong file nén (.zip)
+            if ("zip".equals(ext)) {
+                List<Map<String, Object>> entries = new ArrayList<>();
+                try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(filePath.toFile())) {
+                    var en = zf.entries();
+                    int count = 0;
+                    while (en.hasMoreElements() && count < 300) {
+                        java.util.zip.ZipEntry ze = en.nextElement();
+                        Map<String, Object> item = new LinkedHashMap<>();
+                        item.put("name", ze.getName());
+                        item.put("dir", ze.isDirectory());
+                        item.put("size", ze.getSize() >= 0 ? humanReadableSize(ze.getSize()) : "");
+                        entries.add(item);
+                        count++;
+                    }
+                }
+                Map<String, Object> res = new LinkedHashMap<>();
+                res.put("mode", "zip");
+                res.put("filename", fname);
+                res.put("fileSize", meta.fileSize());
+                res.put("entries", entries);
+                return ResponseEntity.ok(res);
+            }
+
+            // 3. Hỗ trợ đọc file văn bản / code / json / csv / xml / sql / markdown...
+            long maxPreviewBytes = 512 * 1024; // Đọc tối đa 512 KB để hiển thị mượt
+            long totalSize = Files.size(filePath);
+            byte[] raw;
+            boolean truncated = false;
+            if (totalSize > maxPreviewBytes) {
+                raw = new byte[(int) maxPreviewBytes];
+                try (InputStream in = Files.newInputStream(filePath)) {
+                    int read = in.readNBytes(raw, 0, raw.length);
+                    if (read < raw.length) raw = Arrays.copyOf(raw, read);
+                }
+                truncated = true;
+            } else {
+                raw = Files.readAllBytes(filePath);
+            }
+
+            // Kiểm tra xem có phải file nhị phân không
+            int nullBytes = 0;
+            int sampleLen = Math.min(raw.length, 4096);
+            for (int i = 0; i < sampleLen; i++) {
+                if (raw[i] == 0) nullBytes++;
+            }
+            boolean isTextExt = Set.of(
+                    "txt","md","log","csv","tsv","json","xml","yaml","yml","properties","ini","conf","env",
+                    "java","js","jsx","ts","tsx","py","c","cpp","h","hpp","cs","go","rs","php","rb","kt","swift",
+                    "html","htm","css","scss","sql","sh","bat","ps1","gradle","gitignore"
+            ).contains(ext);
+
+            if (!isTextExt && nullBytes > 2) {
+                return ResponseEntity.ok(Map.of(
+                        "mode", "unsupported",
+                        "filename", fname,
+                        "fileSize", meta.fileSize(),
+                        "mimeType", Objects.toString(meta.mimeType(), "application/octet-stream")
+                ));
+            }
+
+            String text = new String(raw, java.nio.charset.StandardCharsets.UTF_8);
+            Map<String, Object> res = new LinkedHashMap<>();
+            res.put("mode", ("csv".equals(ext) || "tsv".equals(ext)) ? "csv" : "text");
+            res.put("ext", ext);
+            res.put("filename", fname);
+            res.put("fileSize", meta.fileSize());
+            res.put("truncated", truncated);
+            res.put("content", text);
+            return ResponseEntity.ok(res);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Không thể đọc nội dung tệp: " + e.getMessage()));
+        }
+    }
+
+    private String extractDocxText(Path docxPath) throws IOException {
+        try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(docxPath.toFile())) {
+            java.util.zip.ZipEntry entry = zf.getEntry("word/document.xml");
+            if (entry == null) return "(Không tìm thấy nội dung văn bản trong tệp DOCX)";
+            String xml;
+            try (InputStream in = zf.getInputStream(entry)) {
+                xml = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            }
+            // Chuyển các thẻ xuống dòng/đoạn văn của Word XML thành ký tự xuống dòng
+            String cleaned = xml
+                    .replaceAll("</w:p>", "\n")
+                    .replaceAll("<w:tab[^>]*/>", "\t")
+                    .replaceAll("<w:br[^>]*/>", "\n")
+                    .replaceAll("<[^>]+>", "");
+            cleaned = cleaned
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", "\"")
+                    .replace("&apos;", "'")
+                    .replace("&amp;", "&");
+            return cleaned.strip();
+        }
+    }
+
     private FileMetadata resolveMetadata(String fileId) {
         FileMetadata cached=fileRegistry.get(fileId);
         if(cached!=null)return cached;
@@ -310,6 +438,7 @@ public class FileController {
         if(n.endsWith(".jpg")||n.endsWith(".jpeg"))return "image/jpeg";
         if(n.endsWith(".gif"))return "image/gif";
         if(n.endsWith(".webp"))return "image/webp";
+        if(n.endsWith(".pdf"))return "application/pdf";
         return "application/octet-stream";
     }
 
@@ -317,19 +446,27 @@ public class FileController {
 
     private void notifyFileShare(ChatMessage msg, String from, String to, String groupId) {
         Map<String, WebSocketSession> sessions = wsHandler.getSessions();
+        var p2pMulticast = wsHandler.getP2pMulticast();
         try {
             String json = gson.toJson(msg);
             if (groupId != null && !groupId.isBlank()) {
                 Group group = wsHandler.getGroups().get(groupId);
                 if (group != null) {
-                    for (String member : group.getMembers()) {
-                        WebSocketSession ms = sessions.get(member);
-                        if (ms != null && ms.isOpen()) ms.sendMessage(new TextMessage(json));
+                    if (p2pMulticast != null) {
+                        p2pMulticast.sendMulticastGroupMessage(from, group, json);
+                    } else {
+                        for (String member : group.getMembers()) {
+                            WebSocketSession ms = sessions.get(member);
+                            if (ms != null && ms.isOpen()) ms.sendMessage(new TextMessage(json));
+                        }
                     }
                 }
             } else if (to != null && !to.isBlank()) {
-                WebSocketSession ts = sessions.get(to);
-                if (ts != null && ts.isOpen()) ts.sendMessage(new TextMessage(json));
+                boolean sentP2p = p2pMulticast != null && p2pMulticast.sendP2PDirectMessage(from, to, json);
+                if (!sentP2p) {
+                    WebSocketSession ts = sessions.get(to);
+                    if (ts != null && ts.isOpen()) ts.sendMessage(new TextMessage(json));
+                }
                 WebSocketSession fs = sessions.get(from);
                 if (fs != null && fs.isOpen()) fs.sendMessage(new TextMessage(json));
             } else {

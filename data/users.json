@@ -1,5 +1,10 @@
 {
   "users": {
+    "TruongAn": {
+      "phone": "0347562920",
+      "salt": "vhKOaQ5CM/SNGcX5zZnSGQ\u003d\u003d",
+      "hash": "3fr7yWHJBrpYJQZxnWh0+XJWKYfQRp3EFhepVu2JpPo\u003d"
+    },
     "Duong": {
       "phone": "0332018432",
       "salt": "bQ34S0cHIoBXDUJ7kvdWgg\u003d\u003d",

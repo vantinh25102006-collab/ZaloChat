@@ -47,6 +47,7 @@ const state = {
   viewedProfile: null,
   blockedUsers: new Set(),
   mutedConversations: new Set(),
+  pinnedConversations: new Set(),
   profileTarget: null,
   // Hồ sơ người dùng dùng để hiển thị avatar thật trong tin nhắn.
   userProfiles: new Map(),
@@ -54,6 +55,26 @@ const state = {
   lastSeenMap: new Map(),
   pendingSentByTarget: new Map(),
   replyTo: null,
+  replyMention: null,
+  contactsSubView: 'friends', // 'friends' | 'groups' | 'requests'
+  contactsSearch: '',
+  contactsSort: 'az',
+  rpCollapsed: new Set(),
+  rpShowAll: {},
+  sidebarSearchActive: false,
+  topSearchPhoneQuery: '',
+  topSearchPhonePending: false,
+  topSearchPhoneResults: null,
+  topSearchTimer: null,
+  recentSearches: JSON.parse(localStorage.getItem('zchat_recent_searches') || '[]'),
+  recentPhoneSearches: JSON.parse(localStorage.getItem('zchat_recent_phone_searches') || '[]'),
+  rightPanelView: 'info', // 'info' | 'members'
+  profileEditMode: false,
+  resumingSession: false,
+  pendingRestoreConvId: null,
+  multiSelectMode: false,
+  selectedMsgIds: new Set(),
+  activeMsgMenuId: null,
 };
 
 // ─── VECTOR SVG ICONS (Chuẩn Zalo PC / Lucide, thay thế toàn bộ emoji thô) ────
@@ -71,6 +92,7 @@ const UI_ICONS = {
   bellOff: '<svg viewBox="0 0 24 24"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
   edit: '<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  eye: '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
   camera: '<svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
   chat: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
   download: '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
@@ -80,6 +102,18 @@ const UI_ICONS = {
   checkCircle: '<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
   xCircle: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
   keyGold: '<svg viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2"/><path d="M17 6l3 3"/><path d="M14 9l2.5 2.5"/></svg>',
+  quote: '<svg class="solid-fill" viewBox="0 0 24 24"><path d="M10 7H6C4.9 7 4 7.9 4 9v4c0 1.1.9 2 2 2h2v2c0 .6-.4 1-1 1H6c-.6 0-1 .4-1 1s.4 1 1 1h1c1.7 0 3-1.3 3-3V9c0-1.1-.9-2-2-2zm9 0h-4c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h2v2c0 .6-.4 1-1 1h-1c-.6 0-1 .4-1 1s.4 1 1 1h1c1.7 0 3-1.3 3-3V9c0-1.1-.9-2-2-2z"/></svg>',
+  forward: '<svg class="solid-fill" viewBox="0 0 24 24"><path d="M14 8V4l8 7-8 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg>',
+  dotsH: '<svg class="solid-fill" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/></svg>',
+  thumbUp: '<svg viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>',
+  copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  pin: '<svg viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1z"/></svg>',
+  star: '<svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  checkList: '<svg viewBox="0 0 24 24"><polyline points="3 7 5 9 8 5"/><line x1="12" y1="7" x2="21" y2="7"/><polyline points="3 14 5 16 8 12"/><line x1="12" y1="14" x2="21" y2="14"/><line x1="3" y1="20" x2="21" y2="20"/></svg>',
+  undo: '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  chevronRight: '<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>',
+  settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  lock: '<svg viewBox="0 0 24 24"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zm-9-2a3 3 0 1 1 6 0v2H9V6zm3 11a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>',
 };
 
 const OWNER_KEY_BADGE_HTML = `<span class="owner-key-badge" title="Trưởng nhóm">${UI_ICONS.keyGold}</span>`;
@@ -137,12 +171,54 @@ const dom = {
   friendReqList:   $('friend-req-list'),
 };
 
-// ─── WebSocket ────────────────────────────────────────────────────────────────
+// ─── WebSocket & Persistent Session ───────────────────────────────────────────
+const SESSION_TOKEN_KEY = 'zchat_session_token';
+const SESSION_USER_KEY = 'zchat_session_user';
+const ACTIVE_CONV_KEY = 'zchat_active_conv';
+
+function getStoredSessionToken() {
+  try { return localStorage.getItem(SESSION_TOKEN_KEY) || ''; } catch (_) { return ''; }
+}
+function getStoredSessionUser() {
+  try { return localStorage.getItem(SESSION_USER_KEY) || ''; } catch (_) { return ''; }
+}
+function saveStoredSession(username, token) {
+  try {
+    if (username) localStorage.setItem(SESSION_USER_KEY, username);
+    if (token) localStorage.setItem(SESSION_TOKEN_KEY, token);
+  } catch (_) {}
+}
+function clearStoredSession() {
+  try {
+    localStorage.removeItem(SESSION_TOKEN_KEY);
+    localStorage.removeItem(SESSION_USER_KEY);
+    localStorage.removeItem(ACTIVE_CONV_KEY);
+  } catch (_) {}
+}
+function saveActiveConv(username, convId) {
+  try {
+    if (username && convId) localStorage.setItem(ACTIVE_CONV_KEY, JSON.stringify({ username, convId }));
+  } catch (_) {}
+}
+function getSavedActiveConv(username) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ACTIVE_CONV_KEY) || 'null');
+    if (raw && raw.username === username && raw.convId) return raw.convId;
+  } catch (_) {}
+  return null;
+}
+
 function connectWebSocket() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   state.ws = new WebSocket(`${proto}://${location.host}/ws`);
 
-  state.ws.onopen = () => { state.reconnectCount = 0; };
+  state.ws.onopen = () => {
+    state.reconnectCount = 0;
+    const savedToken = getStoredSessionToken();
+    if (savedToken && (state.resumingSession || state.username)) {
+      wsSend({ type: 'resume_session', sessionToken: savedToken });
+    }
+  };
 
   state.ws.onmessage = e => {
     try { handleServerMessage(JSON.parse(e.data)); }
@@ -154,10 +230,14 @@ function connectWebSocket() {
       doLocalLogout();
       return;
     }
-    if (state.username && state.reconnectCount < 5) {
+    if ((state.username || state.resumingSession) && state.reconnectCount < 5) {
       state.reconnectCount++;
-      showToast(`Mất kết nối. Đang thử lại (${state.reconnectCount}/5)...`, 'error');
-      setTimeout(connectWebSocket, 3000);
+      if (!state.resumingSession) showToast(`Mất kết nối. Đang thử lại (${state.reconnectCount}/5)...`, 'error');
+      setTimeout(connectWebSocket, 1500);
+    } else if (state.resumingSession) {
+      state.resumingSession = false;
+      document.documentElement.classList.remove('zchat-resuming');
+      if (dom.loginError) dom.loginError.textContent = 'Không thể kết nối lại tới server.';
     }
   };
   state.ws.onerror = () => {};
@@ -197,6 +277,8 @@ function handleServerMessage(msg) {
     case 'message_reaction':     onMessageReaction(msg);       break;
     case 'message_revoked':      onMessageRevoked(msg);        break;
     case 'message_hidden':       onMessageHidden(msg);         break;
+    case 'message_pinned':       onMessagePinned(msg);         break;
+    case 'message_starred':      onMessageStarred(msg);        break;
     case 'conversation_deleted': onConversationDeleted(msg);   break;
     case 'user_blocked':         state.blockedUsers.add(msg.username); showToast('Đã chặn người dùng.','success'); break;
     case 'user_unblocked':       state.blockedUsers.delete(msg.username); showToast('Đã bỏ chặn.','success'); break;
@@ -205,6 +287,7 @@ function handleServerMessage(msg) {
     case 'group_left':           onGroupDeleted(msg);           break;
     case 'posts_result':         onPostsResult(msg);              break;
     case 'profile_updated':      onProfileUpdated(msg); break;
+    case 'p2p_signal':           onP2PSignal(msg); break;
     case 'mute_conversation':    if(msg.muted) state.mutedConversations.add(msg.conversationId); else state.mutedConversations.delete(msg.conversationId); showToast(msg.muted?'Đã tắt thông báo.':'Đã bật thông báo.','success'); break;
     case 'error':                showToast(msg.content, 'error'); break;
   }
@@ -274,12 +357,18 @@ function onRegisterResult(msg) {
 
 function onLoginResult(msg) {
   if (msg.success) {
-    state.username = dom.usernameInput.value.trim();
+    const wasSilentResume = Boolean(state.resumingSession || state.username);
+    state.resumingSession = false;
+    document.documentElement.classList.remove('zchat-resuming');
+    state.username = msg.username || getStoredSessionUser() || dom.usernameInput.value.trim();
+    loadPinnedConversations(state.username);
+    if (msg.sessionToken) saveStoredSession(state.username, msg.sessionToken);
+    if (!state.currentConvId) state.pendingRestoreConvId = getSavedActiveConv(state.username);
     dom.loginScreen.style.display = 'none';
     dom.chatScreen.classList.add('visible');
     dom.userAvatarBtn.textContent = state.username[0].toUpperCase();
     requestUserProfile(state.username, true);
-    showToast(msg.content || 'Đăng nhập thành công!', 'success');
+    if (!wasSilentResume) showToast(msg.content || 'Đăng nhập thành công!', 'success');
     showPanel('chats');
     initEmojiPicker();
     if (!state.avatarRefreshTimer) {
@@ -291,6 +380,12 @@ function onLoginResult(msg) {
       }, 30000);
     }
   } else {
+    const wasResuming = state.resumingSession;
+    state.resumingSession = false;
+    document.documentElement.classList.remove('zchat-resuming');
+    if (wasResuming) clearStoredSession();
+    dom.chatScreen.classList.remove('visible');
+    dom.loginScreen.style.display = 'flex';
     if (dom.loginError) dom.loginError.textContent = msg.content || 'Đăng nhập thất bại.';
     dom.loginBtn.disabled = false;
     dom.loginBtn.textContent = 'Đăng nhập';
@@ -298,13 +393,38 @@ function onLoginResult(msg) {
   }
 }
 
+function bootSessionRestore() {
+  const token = getStoredSessionToken();
+  if (!token) {
+    document.documentElement.classList.remove('zchat-resuming');
+    return;
+  }
+  state.resumingSession = true;
+  document.documentElement.classList.add('zchat-resuming');
+  const savedUser = getStoredSessionUser();
+  if (savedUser && $('session-restore-text')) {
+    $('session-restore-text').textContent = `Đang khôi phục phiên đăng nhập (${savedUser})...`;
+  }
+  connectWebSocket();
+}
+
+function cancelSessionRestore() {
+  state.resumingSession = false;
+  clearStoredSession();
+  document.documentElement.classList.remove('zchat-resuming');
+  try { state.ws?.close(1000, 'Cancelled restore'); } catch (_) {}
+  state.ws = null;
+}
+
 function logout() {
   if (!state.username) return;
   if (confirm('Bạn có muốn đăng xuất?')) {
+    const token = getStoredSessionToken();
+    clearStoredSession();
     state.intentionalLogout = true;
     const socket = state.ws;
     if (socket?.readyState === WebSocket.OPEN) {
-      wsSend({ type: 'disconnect' });
+      wsSend({ type: 'disconnect', sessionToken: token });
       setTimeout(() => { if (socket.readyState !== WebSocket.CLOSED) socket.close(1000, 'User logout'); }, 1000);
     } else if (socket) {
       socket.close(1000, 'User logout');
@@ -317,12 +437,19 @@ function logout() {
 function doLocalLogout() {
   state.username = null;
   state.currentConvId = null;
+  state.pendingRestoreConvId = null;
+  state.resumingSession = false;
   state.ws = null;
   state.conversations.clear();
   state.friends = [];
   state.pendingRequests = [];
   state.groups.clear();
+  state.pinnedConversations.clear();
   state.intentionalLogout = false;
+  clearStoredSession();
+  document.documentElement.classList.remove('zchat-resuming');
+  closeMessageMenu?.();
+  exitMultiSelectMode?.();
   dom.chatScreen.classList.remove('visible');
   dom.loginScreen.style.display = 'flex';
   dom.passwordInput.value = '';
@@ -332,19 +459,217 @@ function doLocalLogout() {
 }
 
 // ─── Panel switching ──────────────────────────────────────────────────────────
+function closeMobileChat() {
+  dom.chatScreen?.classList.remove('mobile-chat-open');
+}
+
 function showPanel(panelName) {
-  state.currentPanel = 'chats';
+  dom.chatScreen?.classList.remove('mobile-chat-open');
+  const isContacts = panelName === 'contacts';
+  state.currentPanel = isContacts ? 'contacts' : 'chats';
   document.querySelectorAll('.sidebar-nav-btn').forEach(b => b.classList.remove('active'));
-  $('nav-chats')?.classList.add('active');
-  dom.panelTitle.textContent = 'Đoạn chat';
+  $(isContacts ? 'nav-contacts' : 'nav-chats')?.classList.add('active');
+  if (dom.panelTitle) dom.panelTitle.style.display = 'none';
   $('create-group-btn').style.display = 'flex';
   $('add-friend-btn').style.display = 'flex';
-  dom.tabMessages.style.display = '';
-  dom.tabGroups.style.display = '';
-  dom.tabContacts.style.display = 'none';
-  dom.tabRequests.style.display = 'none';
-  if ($('tab-unread')) $('tab-unread').style.display = '';
-  switchTab('messages');
+
+  const tabsEl = $('conv-tabs');
+  const cnavEl = $('contacts-nav-list');
+  const cMainEl = $('contacts-main-view');
+  if (tabsEl) tabsEl.style.display = isContacts ? 'none' : 'flex';
+  if (dom.convList) dom.convList.style.display = isContacts ? 'none' : '';
+  if (cnavEl) cnavEl.style.display = isContacts ? 'flex' : 'none';
+  if (cMainEl) cMainEl.style.display = isContacts ? 'flex' : 'none';
+
+  if (isContacts) {
+    dom.emptyState.style.display = 'none';
+    dom.chatArea.style.display = 'none';
+    if (dom.rightPanel) dom.rightPanel.classList.remove('open');
+    state.rightPanelOpen = false;
+    $('shared-files-btn')?.classList.remove('active-panel');
+    switchContactsSubView(state.contactsSubView || 'friends');
+  } else {
+    dom.tabMessages.style.display = '';
+    if ($('tab-unread')) $('tab-unread').style.display = '';
+    dom.tabContacts.style.display = 'none';
+    dom.tabGroups.style.display = 'none';
+    dom.tabRequests.style.display = 'none';
+    if (state.currentConvId && state.conversations.has(state.currentConvId)) {
+      dom.emptyState.style.display = 'none';
+      dom.chatArea.style.display = 'flex';
+    } else {
+      dom.emptyState.style.display = 'flex';
+      dom.chatArea.style.display = 'none';
+    }
+    switchTab(state.activeTab === 'unread' ? 'unread' : 'messages');
+  }
+}
+
+function switchContactsSubView(subView) {
+  state.contactsSubView = subView || 'friends';
+  state.contactsSearch = '';
+  ['friends', 'groups', 'requests'].forEach(k => {
+    $(`cnav-${k}`)?.classList.toggle('active', k === state.contactsSubView);
+  });
+  if (window.innerWidth <= 640) {
+    dom.chatScreen?.classList.add('mobile-chat-open');
+  }
+  renderContactsMainView();
+}
+
+function setContactsSearch(val) {
+  state.contactsSearch = val || '';
+  renderContactsMainBody();
+}
+
+function setContactsSort(val) {
+  state.contactsSort = val || 'az';
+  renderContactsMainBody();
+}
+
+function renderContactsMainView() {
+  if (state.currentPanel !== 'contacts') return;
+  const sub = state.contactsSubView || 'friends';
+  const titles = {
+    friends: ['Danh sách bạn bè', UI_ICONS.user],
+    groups: ['Danh sách nhóm và cộng đồng', UI_ICONS.users],
+    requests: ['Lời mời kết bạn', UI_ICONS.userPlus],
+  };
+  const [title, ico] = titles[sub] || titles.friends;
+  if ($('contacts-main-title')) $('contacts-main-title').textContent = title;
+  if ($('contacts-main-ico')) $('contacts-main-ico').innerHTML = ico;
+  renderContactsMainBody(true);
+}
+
+function renderContactsMainBody(rebuildChrome = false) {
+  const container = $('contacts-main-body');
+  if (!container) return;
+  const sub = state.contactsSubView || 'friends';
+  const q = (state.contactsSearch || '').trim().toLowerCase();
+
+  if (sub === 'friends') {
+    let friends = state.friends.filter(f => !q || f.username.toLowerCase().includes(q));
+    friends.sort((a, b) => state.contactsSort === 'za'
+      ? b.username.localeCompare(a.username)
+      : a.username.localeCompare(b.username));
+
+    const groupsByLetter = new Map();
+    for (const f of friends) {
+      const letter = getInitials(f.username);
+      if (!groupsByLetter.has(letter)) groupsByLetter.set(letter, []);
+      groupsByLetter.get(letter).push(f);
+    }
+
+    let rowsHtml = '';
+    if (friends.length === 0) {
+      rowsHtml = `<div class="contacts-empty-box"><div class="contacts-empty-ico">${UI_ICONS.user}</div><div>${q ? 'Không tìm thấy bạn bè phù hợp' : 'Bạn chưa có bạn bè nào'}</div></div>`;
+    } else {
+      for (const [letter, list] of groupsByLetter.entries()) {
+        rowsHtml += `<div class="contacts-alpha-hdr">${escHtml(letter)}</div>`;
+        for (const f of list) {
+          const online = Boolean(f.online || state.onlineUsers.includes(f.username));
+          rowsHtml += `
+            <div class="contacts-row" onclick="startChat('${escHtml(f.username)}')">
+              <div class="conv-avatar" style="width:42px;height:42px;font-size:15px">${userAvatarInner(f.username)}${online ? '<span class="online-dot"></span>' : ''}</div>
+              <div class="contacts-row-info">
+                <div class="contacts-row-name">${escHtml(f.username)}</div>
+                <div class="contacts-row-sub" style="color:${online ? '#1f9d55' : '#758398'}">${escHtml(formatPresenceStatus(f.username, online))}</div>
+              </div>
+              <div class="contacts-row-actions" onclick="event.stopPropagation()">
+                <button type="button" class="gm-btn" onclick="openProfilePage('${escHtml(f.username)}')">Hồ sơ</button>
+                <button type="button" class="gm-btn danger" onclick="confirmUnfriend('${escHtml(f.username)}')">Hủy kết bạn</button>
+              </div>
+            </div>`;
+        }
+      }
+    }
+
+    if (rebuildChrome || !$('contacts-list-wrap')) {
+      container.innerHTML = `
+        <div class="contacts-count-lbl">Bạn bè (${state.friends.length})</div>
+        <div class="contacts-card">
+          <div class="contacts-toolbar">
+            <div class="contacts-search-in">${UI_ICONS.search}<input type="text" value="${escHtml(state.contactsSearch)}" placeholder="Tìm bạn" oninput="setContactsSearch(this.value)"></div>
+            <select class="contacts-sort-sel" onchange="setContactsSort(this.value)">
+              <option value="az"${state.contactsSort==='az'?' selected':''}>Tên (A-Z)</option>
+              <option value="za"${state.contactsSort==='za'?' selected':''}>Tên (Z-A)</option>
+            </select>
+          </div>
+          <div id="contacts-list-wrap">${rowsHtml}</div>
+        </div>`;
+    } else {
+      $('contacts-list-wrap').innerHTML = rowsHtml;
+    }
+    return;
+  }
+
+  if (sub === 'groups') {
+    const allGroups = [...state.groups.values()];
+    let list = allGroups.filter(g => !q || (g.name || '').toLowerCase().includes(q));
+    list.sort((a, b) => state.contactsSort === 'za'
+      ? (b.name || '').localeCompare(a.name || '')
+      : (a.name || '').localeCompare(b.name || ''));
+
+    const rowsHtml = list.length === 0
+      ? `<div class="contacts-empty-box"><div class="contacts-empty-ico">${UI_ICONS.users}</div><div>${q ? 'Không tìm thấy nhóm phù hợp' : 'Bạn chưa tham gia nhóm nào'}</div></div>`
+      : list.map(g => {
+          const isOwner = g.createdBy === state.username;
+          return `
+            <div class="contacts-row" onclick="selectConversation('group:${escHtml(g.id)}')">
+              <div class="conv-avatar group" style="width:42px;height:42px;font-size:15px">${groupAvatarInner(g.id, g.name)}</div>
+              <div class="contacts-row-info">
+                <div class="contacts-row-name"><span class="conv-group-ico">${UI_ICONS.users}</span><span>${escHtml(g.name)}</span>${isOwner ? '<span class="group-owner-badge">Trưởng nhóm</span>' : ''}</div>
+                <div class="contacts-row-sub">${(g.members || []).length} thành viên</div>
+              </div>
+              <div class="contacts-row-actions" onclick="event.stopPropagation()">
+                <button type="button" class="gm-btn" onclick="selectConversation('group:${escHtml(g.id)}')">Nhắn tin</button>
+              </div>
+            </div>`;
+        }).join('');
+
+    if (rebuildChrome || !$('contacts-list-wrap')) {
+      container.innerHTML = `
+        <div class="contacts-count-lbl">Nhóm và cộng đồng (${allGroups.length})</div>
+        <div class="contacts-card">
+          <div class="contacts-toolbar">
+            <div class="contacts-search-in">${UI_ICONS.search}<input type="text" value="${escHtml(state.contactsSearch)}" placeholder="Tìm kiếm..." oninput="setContactsSearch(this.value)"></div>
+            <select class="contacts-sort-sel" onchange="setContactsSort(this.value)">
+              <option value="az"${state.contactsSort==='az'?' selected':''}>Tên (A-Z)</option>
+              <option value="za"${state.contactsSort==='za'?' selected':''}>Tên (Z-A)</option>
+            </select>
+          </div>
+          <div id="contacts-list-wrap">${rowsHtml}</div>
+        </div>`;
+    } else {
+      $('contacts-list-wrap').innerHTML = rowsHtml;
+    }
+    return;
+  }
+
+  // sub === 'requests'
+  const reqs = state.pendingRequests || [];
+  if (reqs.length === 0) {
+    container.innerHTML = `
+      <div class="contacts-empty-box">
+        <div class="contacts-empty-ico">${UI_ICONS.userPlus}</div>
+        <div style="font-size:14px;font-weight:600;color:#081c36;margin-bottom:4px">Không có lời mời kết bạn</div>
+        <div style="font-size:13px;color:#758398">Các lời mời kết bạn mới sẽ hiển thị tại đây</div>
+      </div>`;
+  } else {
+    const cards = reqs.map(req => `
+      <div class="contacts-row" style="cursor:default">
+        <div class="conv-avatar" style="width:44px;height:44px;font-size:16px">${userAvatarInner(req.sender)}</div>
+        <div class="contacts-row-info">
+          <div class="contacts-row-name">${escHtml(req.sender)}</div>
+          <div class="contacts-row-sub">Đã gửi lời mời · ${formatTime(req.createdAt)}</div>
+        </div>
+        <div class="contacts-row-actions">
+          <button class="freq-accept" onclick="acceptFriendRequest('${escHtml(req.requestId)}','${escHtml(req.sender)}')">Đồng ý</button>
+          <button class="freq-reject" onclick="rejectFriendRequest('${escHtml(req.requestId)}','${escHtml(req.sender)}')">Từ chối</button>
+        </div>
+      </div>`).join('');
+    container.innerHTML = `<div class="contacts-count-lbl">Lời mời kết bạn (${reqs.length})</div><div class="contacts-card">${cards}</div>`;
+  }
 }
 
 // ─── Tab switching ────────────────────────────────────────────────────────────
@@ -390,6 +715,15 @@ function onGroupCreated(msg) {
   }
 }
 
+function tryRestoreActiveConv() {
+  const target = state.pendingRestoreConvId;
+  if (!target || state.currentConvId) return;
+  if (state.conversations.has(target)) {
+    state.pendingRestoreConvId = null;
+    selectConversation(target);
+  }
+}
+
 function onConversationList(msg) {
   for (const item of (msg.conversations || [])) {
     const id=item.conversationId;
@@ -407,6 +741,7 @@ function onConversationList(msg) {
   }
   updateUnreadBadge();
   renderConversationList();
+  tryRestoreActiveConv();
 }
 function onGroupList(msg) {
   if (!msg.groups) return;
@@ -417,6 +752,8 @@ function onGroupList(msg) {
     if (conv) conv.name = g.name;
   }
   renderConversationList();
+  if (state.currentPanel === 'contacts') renderContactsMainView();
+  tryRestoreActiveConv();
 }
 
 function onUserList(msg) {
@@ -448,8 +785,95 @@ function updateChatHeaderStatus() {
     dom.chatHeaderStatus.style.color = online ? '#2ecc71' : '#8893a4';
   } else if (current.type === 'group') {
     const g = state.groups.get(state.currentConvId.replace('group:',''));
-    dom.chatHeaderStatus.textContent = `${g?.members?.length || 0} thành viên`;
-    dom.chatHeaderStatus.style.color = '#0068ff';
+    dom.chatHeaderStatus.innerHTML = `<span class="hdr-members-link" title="Xem thành viên nhóm" onclick="openRightPanelMembers()">${UI_ICONS.user}<span>${g?.members?.length || 0} thành viên</span></span>`;
+    dom.chatHeaderStatus.style.color = '#52627a';
+  }
+}
+
+// ─── WebRTC Peer-to-Peer (RTCDataChannel) cho Chat 1-vs-1 giữa 2 trình duyệt ──
+function setupP2PDataChannelEvents(peerUsername, dc) {
+  if (!state.p2pPeers) state.p2pPeers = new Map();
+  dc.onopen = () => {
+    const entry = state.p2pPeers.get(peerUsername);
+    if (entry) entry.ready = true;
+    console.log(`[P2P-WebRTC] RTCDataChannel đã mở trực tiếp với '${peerUsername}'`);
+    updateChatHeaderStatus();
+  };
+  dc.onclose = () => {
+    const entry = state.p2pPeers.get(peerUsername);
+    if (entry) entry.ready = false;
+    updateChatHeaderStatus();
+  };
+  dc.onmessage = e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg && msg.type === 'private_message') {
+        onPrivateMessage(msg);
+      }
+    } catch (err) {
+      console.error('[P2P-WebRTC] Lỗi đọc gói P2P:', err);
+    }
+  };
+}
+
+async function ensureP2PDataChannel(peerUsername) {
+  if (!state.p2pPeers) state.p2pPeers = new Map();
+  if (!peerUsername || peerUsername === state.username || typeof RTCPeerConnection === 'undefined') return;
+  if (!state.onlineUsers.includes(peerUsername)) return;
+  const existing = state.p2pPeers.get(peerUsername);
+  if (existing && (existing.ready || existing.pc.connectionState === 'connecting')) return;
+
+  try {
+    const pc = new RTCPeerConnection({ iceServers: [] });
+    const dc = pc.createDataChannel('zchat-p2p');
+    const entry = { pc, dc, ready: false };
+    state.p2pPeers.set(peerUsername, entry);
+    setupP2PDataChannelEvents(peerUsername, dc);
+
+    pc.onicecandidate = ev => {
+      if (ev.candidate) {
+        wsSend({ type: 'p2p_signal', to: peerUsername, signalType: 'candidate', candidate: ev.candidate });
+      }
+    };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    wsSend({ type: 'p2p_signal', to: peerUsername, signalType: 'offer', sdp: pc.localDescription });
+  } catch (err) {
+    console.warn('[P2P-WebRTC] Không thể khởi tạo RTCPeerConnection:', err);
+  }
+}
+
+async function onP2PSignal(msg) {
+  if (!state.p2pPeers) state.p2pPeers = new Map();
+  const from = msg.from;
+  if (!from || typeof RTCPeerConnection === 'undefined') return;
+  try {
+    let entry = state.p2pPeers.get(from);
+    if (msg.signalType === 'offer') {
+      if (entry?.pc) { try { entry.pc.close(); } catch (_) {} }
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      entry = { pc, dc: null, ready: false };
+      state.p2pPeers.set(from, entry);
+      pc.ondatachannel = ev => {
+        entry.dc = ev.channel;
+        setupP2PDataChannelEvents(from, ev.channel);
+      };
+      pc.onicecandidate = ev => {
+        if (ev.candidate) {
+          wsSend({ type: 'p2p_signal', to: from, signalType: 'candidate', candidate: ev.candidate });
+        }
+      };
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      wsSend({ type: 'p2p_signal', to: from, signalType: 'answer', sdp: pc.localDescription });
+    } else if (msg.signalType === 'answer' && entry?.pc) {
+      await entry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+    } else if (msg.signalType === 'candidate' && entry?.pc && msg.candidate) {
+      await entry.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+    }
+  } catch (err) {
+    console.warn('[P2P-WebRTC] Lỗi xử lý tín hiệu P2P:', err);
   }
 }
 
@@ -507,7 +931,7 @@ function computeLastMessagePreview(conv) {
   const sender = last.from || last.username || '';
   const isSys = last.type === 'system' || last.messageType === 'system' || sender === 'SYSTEM';
   if (isSys) return last.content || '';
-  const prefix = (isGroup && sender) ? `${sender}: ` : '';
+  const prefix = sender === state.username ? 'Bạn: ' : (isGroup && sender ? `${sender}: ` : '');
 
   const t = typeof last.type === 'string' ? last.type.toLowerCase() : '';
   if (t === 'revoked') {
@@ -547,9 +971,12 @@ function onHistory(msg) {
     type: typeof item.type === 'string' ? item.type.toLowerCase() : item.type,
     timestamp: item.timestamp || new Date().toISOString(),
     reactions: item.reactions || [],
+    starred: Boolean(item.starred),
   }));
+  conv.pinnedMessage = msg.pinnedMessage || null;
   conv.lastMsg = computeLastMessagePreview(conv);
   if (state.currentConvId === msg.conversationId) {
+    renderPinnedBanner();
     renderMessages();
     if (state.rightPanelOpen) renderRightPanel();
   }
@@ -576,8 +1003,10 @@ function onFriendList(msg) {
   });
   state.friends.forEach(f => { if (f.conversationDeleted !== 'true') ensureConversation(dmConvId(state.username,f.username),'dm',f.username,[]); });
   if (state.activeTab === 'contacts' || state.activeTab === 'messages') renderConversationList();
+  if (state.currentPanel === 'contacts') renderContactsMainView();
   const current = state.conversations.get(state.currentConvId);
   if (current?.type === 'dm') updateStrangerBanner(current.name);
+  tryRestoreActiveConv();
 }
 
 function onFriendRequestsList(msg) {
@@ -585,6 +1014,7 @@ function onFriendRequestsList(msg) {
   updateFriendReqBadge();
   renderFriendRequestModal();
   if (state.activeTab === 'requests') renderConversationList();
+  if (state.currentPanel === 'contacts') renderContactsMainView();
 }
 
 function refreshRelationshipUI(targetUsername) {
@@ -596,6 +1026,7 @@ function refreshRelationshipUI(targetUsername) {
     const cachedPosts = state.lastPostsPayload?.username === targetUsername ? state.lastPostsPayload : { username: targetUsername, profile: state.userProfiles.get(targetUsername) || { username: targetUsername }, posts: [] };
     renderProfilePage(cachedPosts);
   }
+  if (state.sidebarSearchActive) renderSidebarSearchResults();
   const current = state.conversations.get(state.currentConvId);
   if (current?.type === 'dm' && current.name === targetUsername) {
     updateStrangerBanner(targetUsername);
@@ -721,8 +1152,10 @@ function onMessageRevoked(msg) {
   if (!target) return;
   target.type = 'revoked'; target.content = 'Tin nhắn đã được thu hồi';
   target.fileId = null; target.filename = null; target.mimeType = null;
-  target.reactions = [];
+  target.reactions = []; target.starred = false;
+  if (conv.pinnedMessage?.messageId === msg.messageId) conv.pinnedMessage = null;
   if (state.currentConvId === msg.conversationId) {
+    renderPinnedBanner();
     renderMessages();
     if (state.rightPanelOpen) renderRightPanel();
   }
@@ -732,12 +1165,29 @@ function onMessageRevoked(msg) {
 function onMessageHidden(msg) {
   const conv=state.conversations.get(msg.conversationId);if(!conv)return;
   conv.messages=conv.messages.filter(m=>m.messageId!==msg.messageId);
+  state.selectedMsgIds?.delete(msg.messageId);
+  if (conv.pinnedMessage?.messageId === msg.messageId) conv.pinnedMessage = null;
   conv.lastMsg = computeLastMessagePreview(conv) || 'Chưa có tin nhắn';
   if(state.currentConvId===msg.conversationId) {
+    renderPinnedBanner();
     renderMessages();
     if (state.rightPanelOpen) renderRightPanel();
   }
   renderConversationList();
+}
+function onMessagePinned(msg) {
+  const conv = state.conversations.get(msg.conversationId);
+  if (!conv) return;
+  conv.pinnedMessage = msg.pinnedMessage || null;
+  if (state.currentConvId === msg.conversationId) renderPinnedBanner();
+  showToast(conv.pinnedMessage ? 'Đã ghim tin nhắn.' : 'Đã bỏ ghim tin nhắn.', 'success');
+}
+function onMessageStarred(msg) {
+  const conv = state.conversations.get(msg.conversationId);
+  const target = conv?.messages.find(m => m.messageId === msg.messageId);
+  if (target) target.starred = Boolean(msg.starred);
+  if (state.currentConvId === msg.conversationId) renderMessages();
+  showToast(msg.starred ? 'Đã đánh dấu tin nhắn.' : 'Đã bỏ đánh dấu tin nhắn.', 'success');
 }
 function onConversationDeleted(msg) {
   state.conversations.delete(msg.conversationId);
@@ -750,18 +1200,33 @@ function onConversationDeleted(msg) {
 }
 function onGroupUpdated(msg) {
   const existing = state.groups.get(msg.id) || {};
+  const prevOwner = existing.createdBy;
   const merged = { ...existing, ...msg };
   state.groups.set(msg.id, merged);
   const convId=`group:${msg.id}`;
   const conv=state.conversations.get(convId);
   if(conv) conv.name=merged.name;
   else ensureConversation(convId,'group',merged.name,merged.members||[]);
+  if (prevOwner && merged.createdBy && prevOwner !== merged.createdBy) {
+    if (merged.createdBy === state.username) {
+      showToast(`Bạn đã trở thành Trưởng nhóm "${merged.name}".`, 'success');
+    } else if (prevOwner === state.username) {
+      showToast(`Đã nhượng quyền Trưởng nhóm cho ${merged.createdBy}.`, 'success');
+    }
+  }
   renderConversationList();
+  if (state.currentPanel === 'contacts') renderContactsMainView();
   if(state.currentConvId===convId) {
     dom.chatHeaderName.textContent = merged.name;
     dom.chatHeaderAv.innerHTML = groupAvatarInner(msg.id, merged.name);
     updateChatHeaderStatus();
+    updateComposerPermissions();
     renderMessages();
+    if (state.rightPanelOpen) renderRightPanel();
+    const modalOpen = $('group-action-modal-overlay')?.classList.contains('visible');
+    if (modalOpen && $('group-action-modal-body')?.dataset.modalMode === 'members') {
+      showGroupMembers();
+    }
   }
 }
 function onGroupDeleted(msg) {
@@ -772,10 +1237,57 @@ function onGroupDeleted(msg) {
   renderConversationList();
 }
 
+function normalizeVnPhone(raw) {
+  const cleaned = String(raw || '').replace(/[\s.\-()]/g, '');
+  let normalized = cleaned;
+  if (cleaned.startsWith('+84') && cleaned.length >= 11) {
+    normalized = '0' + cleaned.slice(3);
+  } else if (cleaned.startsWith('84') && cleaned.length >= 10) {
+    normalized = '0' + cleaned.slice(2);
+  }
+  return {
+    normalized,
+    isPhone: /^0[0-9]{9}$/.test(normalized),
+    looksLikePhoneDigits: /^[+0-9][0-9]{2,}$/.test(cleaned),
+  };
+}
+
+function saveRecentSearch(entry) {
+  if (!entry || !entry.name) return;
+  const key = `${entry.kind}:${entry.id || entry.name}`;
+  state.recentSearches = [
+    entry,
+    ...state.recentSearches.filter(r => `${r.kind}:${r.id || r.name}` !== key),
+  ].slice(0, 8);
+  localStorage.setItem('zchat_recent_searches', JSON.stringify(state.recentSearches));
+}
+
+function saveRecentPhoneSearch(userObj) {
+  if (!userObj || !userObj.username) return;
+  const item = { username: userObj.username, phone: userObj.phone || '' };
+  state.recentPhoneSearches = [
+    item,
+    ...state.recentPhoneSearches.filter(r => r.username !== item.username),
+  ].slice(0, 5);
+  localStorage.setItem('zchat_recent_phone_searches', JSON.stringify(state.recentPhoneSearches));
+}
+
 function onSearchResults(msg) {
   state.searchResults = msg.searchResults || [];
-  if (dom.phoneSearchInput.value.trim() && dom.phoneSearchResult) {
+  for (const r of state.searchResults) {
+    if (r.username) {
+      requestUserProfile(r.username);
+      if (r.phone) saveRecentPhoneSearch(r);
+    }
+  }
+  if (state.sidebarSearchActive && state.topSearchPhoneQuery) {
+    state.topSearchPhonePending = false;
+    state.topSearchPhoneResults = state.searchResults;
+    renderSidebarSearchResults();
+  }
+  if ($('add-friend-modal-overlay')?.classList.contains('visible') && dom.phoneSearchInput?.value.trim() && dom.phoneSearchResult) {
     renderPhoneSearchResult(state.searchResults);
+    renderRecentPhoneList();
   }
 }
 
@@ -815,10 +1327,14 @@ function updateFriendReqBadge() {
   } else {
     dom.friendReqBadge.style.display = 'none';
   }
+  const cnavBadge = $('cnav-req-badge');
+  if (cnavBadge) {
+    cnavBadge.style.display = count > 0 ? 'inline-flex' : 'none';
+    cnavBadge.textContent = count > 99 ? '99+' : count;
+  }
   const requestTab = $('tab-requests');
   if (requestTab) {
-    requestTab.style.display = '';
-    requestTab.innerHTML = 'Lời mời' + (count > 0 ? `<span class="tab-badge">${count > 99 ? '99+' : count}</span>` : '');
+    requestTab.style.display = 'none';
   }
 }
 
@@ -909,9 +1425,24 @@ function updateStrangerBanner(otherUsername) {
 
 // ─── Select conversation ───────────────────────────────────────────────────────
 function selectConversation(convId) {
+  closeMessageMenu();
+  closeMentionBox();
+  clearReply();
+  exitMultiSelectMode();
   state.currentConvId = convId;
+  saveActiveConv(state.username, convId);
   const conv = state.conversations.get(convId);
   if (!conv) return;
+  if (state.currentPanel === 'contacts') {
+    state.currentPanel = 'chats';
+    document.querySelectorAll('.sidebar-nav-btn').forEach(b => b.classList.remove('active'));
+    $('nav-chats')?.classList.add('active');
+    if ($('conv-tabs')) $('conv-tabs').style.display = 'flex';
+    if (dom.convList) dom.convList.style.display = '';
+    if ($('contacts-nav-list')) $('contacts-nav-list').style.display = 'none';
+    if ($('contacts-main-view')) $('contacts-main-view').style.display = 'none';
+  }
+  dom.chatScreen?.classList.add('mobile-chat-open');
   conv.unread = 0;
   updateUnreadBadge();
   wsSend({type:'mark_read',conversationId:convId});
@@ -924,6 +1455,8 @@ function selectConversation(convId) {
     wsSend({ type: 'user_profile', username: conv.name });
     dom.chatHeaderAv.innerHTML = userAvatarInner(conv.name);
     updateStrangerBanner(conv.name);
+    ensureP2PDataChannel(conv.name);
+    if ($('hdr-add-member-btn')) $('hdr-add-member-btn').style.display = 'none';
   } else {
     const gid = convId.replace('group:', '');
     dom.chatHeaderAv.innerHTML = groupAvatarInner(gid, conv.name);
@@ -931,16 +1464,22 @@ function selectConversation(convId) {
     if (strangerBanner) strangerBanner.style.display = 'none';
     if (dom.attachBtn) dom.attachBtn.style.display = 'flex';
     if (dom.micBtn) dom.micBtn.style.display = 'flex';
-    if (dom.messageInput) dom.messageInput.placeholder = 'Nhập tin nhắn...';
+    if ($('hdr-add-member-btn')) $('hdr-add-member-btn').style.display = 'flex';
   }
+  if (dom.messageInput) dom.messageInput.placeholder = `Nhập @, tin nhắn tới ${conv.name}`;
+  updateComposerActionBtn();
   dom.chatHeaderAv.className = 'chat-hdr-avatar' + (conv.type === 'group' ? ' group' : '');
   dom.chatHeaderName.textContent = conv.name;
+  state.rightPanelView = 'info';
   updateChatHeaderStatus();
+  updateComposerPermissions();
+  if (state.rightPanelOpen) renderRightPanel();
 
   if (conv.messages.length === 0) {
     wsSend({ type: 'history', conversationId: convId });
   }
 
+  renderPinnedBanner();
   renderMessages();
   renderConversationList();
   dom.messageInput.focus();
@@ -948,8 +1487,187 @@ function selectConversation(convId) {
   if (state.msgSearchActive) closeMsgSearch();
 }
 
+function enterSidebarSearch() {
+  if (state.sidebarSearchActive) return;
+  state.sidebarSearchActive = true;
+  if ($('conv-header-actions')) $('conv-header-actions').style.display = 'none';
+  if ($('search-close-btn')) $('search-close-btn').style.display = 'inline-flex';
+  if ($('conv-tabs')) $('conv-tabs').style.display = 'none';
+  if ($('contacts-nav-list')) $('contacts-nav-list').style.display = 'none';
+  if (dom.convList) dom.convList.style.display = '';
+  renderSidebarSearchResults();
+}
+
+function exitSidebarSearch() {
+  clearTimeout(state.topSearchTimer);
+  state.sidebarSearchActive = false;
+  state.topSearchPhoneQuery = '';
+  state.topSearchPhonePending = false;
+  state.topSearchPhoneResults = null;
+  if (dom.searchInput) dom.searchInput.value = '';
+  if ($('conv-header-actions')) $('conv-header-actions').style.display = 'flex';
+  if ($('search-close-btn')) $('search-close-btn').style.display = 'none';
+  if (state.currentPanel === 'contacts') {
+    if ($('conv-tabs')) $('conv-tabs').style.display = 'none';
+    if ($('contacts-nav-list')) $('contacts-nav-list').style.display = 'flex';
+    if (dom.convList) dom.convList.style.display = 'none';
+  } else {
+    if ($('conv-tabs')) $('conv-tabs').style.display = 'flex';
+    if (dom.convList) dom.convList.style.display = '';
+    renderConversationList();
+  }
+}
+
+function clearRecentSearches() {
+  state.recentSearches = [];
+  localStorage.removeItem('zchat_recent_searches');
+  if (state.sidebarSearchActive) renderSidebarSearchResults();
+}
+
+function openSearchConvTarget(kind, id, name) {
+  saveRecentSearch({ kind, id, name });
+  exitSidebarSearch();
+  if (kind === 'group') selectConversation(id);
+  else if (kind === 'dm') startChat(name);
+  else if (kind === 'user') openProfilePage(name);
+}
+
+function handleSidebarSearchInput() {
+  if (!state.sidebarSearchActive) enterSidebarSearch();
+  const raw = dom.searchInput?.value || '';
+  const { normalized, isPhone } = normalizeVnPhone(raw);
+  clearTimeout(state.topSearchTimer);
+
+  if (isPhone) {
+    state.topSearchPhoneQuery = normalized;
+    state.topSearchPhonePending = true;
+    state.topSearchPhoneResults = null;
+    state.topSearchTimer = setTimeout(() => {
+      wsSend({ type: 'search_by_phone', phone: normalized });
+    }, 200);
+  } else {
+    state.topSearchPhoneQuery = '';
+    state.topSearchPhonePending = false;
+    state.topSearchPhoneResults = null;
+  }
+  renderSidebarSearchResults();
+}
+
+function renderSidebarSearchUserRow(u) {
+  const uname = u.username;
+  const { rel, requestId } = getRelationshipWith(uname);
+  const effRel = (rel && rel !== 'stranger') ? rel : (u.relationship || 'stranger');
+  const effReqId = requestId || u.requestId || '';
+  let actionHtml = '';
+  if (effRel === 'friend') {
+    actionHtml = `<button type="button" class="zalo-add-pill-btn" onclick="event.stopPropagation();openSearchConvTarget('dm','${escHtml(dmConvId(state.username, uname))}','${escHtml(uname)}')">Nhắn tin</button>`;
+  } else if (effRel === 'pending_sent') {
+    actionHtml = `<button type="button" class="zalo-add-pill-btn muted" onclick="event.stopPropagation();cancelFriendRequest('${escHtml(effReqId)}','${escHtml(uname)}')">Hủy lời mời</button>`;
+  } else if (effRel === 'pending_received') {
+    actionHtml = `<button type="button" class="zalo-add-pill-btn solid" onclick="event.stopPropagation();acceptFriendRequest('${escHtml(effReqId)}','${escHtml(uname)}')">Đồng ý</button>`;
+  } else {
+    actionHtml = `<button type="button" class="zalo-add-pill-btn solid" onclick="event.stopPropagation();sendFriendRequest('${escHtml(uname)}')">Kết bạn</button>`;
+  }
+  const phoneDisplay = u.phone ? `(+84) ${u.phone.replace(/^0/, '')}` : '';
+  return `
+    <div class="zalo-search-user-row" onclick="saveRecentSearch({kind:'user',id:'${escHtml(uname)}',name:'${escHtml(uname)}',phone:'${escHtml(u.phone||'')}'});openProfilePage('${escHtml(uname)}')">
+      <div class="conv-avatar" style="width:42px;height:42px;font-size:15px">${userAvatarInner(uname)}</div>
+      <div class="zalo-search-user-info">
+        <div class="zalo-search-user-name">${escHtml(uname)}</div>
+        <div class="zalo-search-user-sub">${escHtml(phoneDisplay || 'Người dùng ZChat')}</div>
+      </div>
+      ${actionHtml}
+    </div>`;
+}
+
+function renderSidebarSearchResults() {
+  if (!dom.convList) return;
+  const raw = (dom.searchInput?.value || '').trim();
+  const q = raw.toLowerCase();
+  const { isPhone, looksLikePhoneDigits } = normalizeVnPhone(raw);
+
+  if (!raw) {
+    if (!state.recentSearches.length) {
+      dom.convList.innerHTML = `
+        <div class="zalo-search-sec-hdr"><span>Tìm gần đây</span></div>
+        <div class="rp-empty-inline" style="padding:28px 16px">Chưa có tìm kiếm gần đây.<br>Nhập tên bạn bè, nhóm hoặc số điện thoại (10 số) để tìm & kết bạn nhanh.</div>`;
+      return;
+    }
+    const itemsHtml = state.recentSearches.map(r => {
+      const av = r.kind === 'group'
+        ? `<div class="conv-avatar group" style="width:40px;height:40px;font-size:14px">${groupAvatarInner((r.id||'').replace('group:',''), r.name)}</div>`
+        : `<div class="conv-avatar" style="width:40px;height:40px;font-size:14px">${userAvatarInner(r.name)}</div>`;
+      const sub = r.kind === 'group' ? 'Nhóm trò chuyện' : (r.phone ? `(+84) ${r.phone.replace(/^0/, '')}` : 'Bạn bè');
+      return `<div class="zalo-search-user-row" onclick="openSearchConvTarget('${escHtml(r.kind)}','${escHtml(r.id||'')}','${escHtml(r.name)}')">
+        ${av}
+        <div class="zalo-search-user-info">
+          <div class="zalo-search-user-name">${escHtml(r.name)}</div>
+          <div class="zalo-search-user-sub">${escHtml(sub)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    dom.convList.innerHTML = `
+      <div class="zalo-search-sec-hdr"><span>Tìm gần đây</span><button type="button" class="zalo-search-sec-action" onclick="clearRecentSearches()">Xóa lịch sử</button></div>
+      ${itemsHtml}`;
+    return;
+  }
+
+  let html = '';
+
+  if (isPhone && state.topSearchPhoneQuery) {
+    html += `<div class="zalo-search-sec-hdr"><span>Tìm bạn qua số điện thoại</span></div>`;
+    if (state.topSearchPhonePending) {
+      html += `<div class="rp-empty-inline" style="padding:14px 16px">Đang tìm số ${escHtml(state.topSearchPhoneQuery)}...</div>`;
+    } else if (!state.topSearchPhoneResults || state.topSearchPhoneResults.length === 0) {
+      html += `<div class="rp-empty-inline" style="padding:14px 16px">Không tìm thấy tài khoản với SĐT <b>${escHtml(state.topSearchPhoneQuery)}</b>.</div>`;
+    } else {
+      html += state.topSearchPhoneResults.map(u => renderSidebarSearchUserRow(u)).join('');
+    }
+  } else if (looksLikePhoneDigits) {
+    html += `<div class="zalo-search-sec-hdr"><span>Tìm bạn qua số điện thoại</span></div>
+      <div class="rp-empty-inline" style="padding:10px 16px">Nhập đủ 10 số (vd: 0332018432) để tìm người lạ kết bạn.</div>`;
+  }
+
+  const matchedConvs = [...state.conversations.entries()]
+    .filter(([_, c]) => c.type !== 'global' && (c.name || '').toLowerCase().includes(q))
+    .slice(0, 15);
+  const matchedFriends = state.friends
+    .filter(f => f.username.toLowerCase().includes(q) && !matchedConvs.some(([_, c]) => c.type === 'dm' && c.name === f.username))
+    .slice(0, 10);
+
+  if (matchedConvs.length || matchedFriends.length) {
+    html += `<div class="zalo-search-sec-hdr"><span>Liên hệ & Đoạn chat</span></div>`;
+    for (const [cid, c] of matchedConvs) {
+      const av = c.type === 'group'
+        ? `<div class="conv-avatar group" style="width:40px;height:40px;font-size:14px">${groupAvatarInner(cid.replace('group:',''), c.name)}</div>`
+        : `<div class="conv-avatar" style="width:40px;height:40px;font-size:14px">${userAvatarInner(c.name)}</div>`;
+      html += `<div class="zalo-search-user-row" onclick="openSearchConvTarget('${c.type}','${escHtml(cid)}','${escHtml(c.name)}')">
+        ${av}
+        <div class="zalo-search-user-info">
+          <div class="zalo-search-user-name">${escHtml(c.name)}</div>
+          <div class="zalo-search-user-sub">${c.type === 'group' ? 'Nhóm trò chuyện' : 'Đoạn chat'}</div>
+        </div>
+      </div>`;
+    }
+    for (const f of matchedFriends) {
+      html += `<div class="zalo-search-user-row" onclick="openSearchConvTarget('dm','${escHtml(dmConvId(state.username, f.username))}','${escHtml(f.username)}')">
+        <div class="conv-avatar" style="width:40px;height:40px;font-size:14px">${userAvatarInner(f.username)}</div>
+        <div class="zalo-search-user-info">
+          <div class="zalo-search-user-name">${escHtml(f.username)}</div>
+          <div class="zalo-search-user-sub">Bạn bè</div>
+        </div>
+      </div>`;
+    }
+  } else if (!isPhone && !looksLikePhoneDigits) {
+    html += `<div class="rp-empty-inline" style="padding:28px 16px">Không tìm thấy kết quả phù hợp.</div>`;
+  }
+
+  dom.convList.innerHTML = html;
+}
+
 // ─── Render conversation list ─────────────────────────────────────────────────
 function renderConversationList() {
+  if (state.sidebarSearchActive) { renderSidebarSearchResults(); return; }
   const filter = dom.searchInput.value.trim().toLowerCase();
   const tab = state.activeTab;
   dom.convList.innerHTML = '';
@@ -1002,8 +1720,12 @@ function renderConversationList() {
     return;
   }
 
-  // Không tìm kiếm người chưa kết bạn ở danh sách đoạn chat: chỉ lọc trong các đoạn chat hiện có (hoặc bạn bè đã kết bạn / nhóm đã tham gia)
-  const convArray = [...state.conversations.entries()].sort((a,b) => new Date(b[1].lastTimestamp || 0) - new Date(a[1].lastTimestamp || 0));
+  // Ghim hội thoại lên đầu danh sách, phần còn lại sắp theo thời gian tin nhắn mới nhất.
+  const convArray = [...state.conversations.entries()].sort((a, b) => {
+    const pinDiff = (state.pinnedConversations.has(b[0]) ? 1 : 0) - (state.pinnedConversations.has(a[0]) ? 1 : 0);
+    if (pinDiff !== 0) return pinDiff;
+    return new Date(b[1].lastTimestamp || 0) - new Date(a[1].lastTimestamp || 0);
+  });
   for (const [convId, conv] of convArray) {
     if (tab === 'groups' && conv.type !== 'group') continue;
     if (tab === 'unread' && !(conv.unread > 0)) continue;
@@ -1018,16 +1740,24 @@ function renderConversationList() {
     const avClass = conv.type === 'group' ? 'conv-avatar group' : 'conv-avatar';
     const dot = isOnline ? '<span class="online-dot"></span>' : '';
     const gid = conv.type === 'group' ? convId.replace('group:', '') : '';
+    const isMuted = state.mutedConversations.has(convId);
+    const isPinnedConv = state.pinnedConversations.has(convId);
+    const groupBadge = conv.type === 'group' ? `<span class="conv-group-ico">${UI_ICONS.users}</span>` : '';
+    const lastTs = conv.lastTimestamp ? formatRelativeShort(conv.lastTimestamp) : (conv.lastTime || '');
 
     item.innerHTML = `
       <div class="${avClass}">${conv.type === 'dm' ? userAvatarInner(conv.name) : groupAvatarInner(gid, conv.name)}${dot}</div>
       <div class="conv-info">
-        <div class="conv-name">${escHtml(conv.name)}</div>
+        <div class="conv-name">${groupBadge}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(conv.name)}</span></div>
         ${conv.type==='dm'&&!state.friends.some(f=>f.username===conv.name)?'<div style="font-size:10px;color:#a0a7b4">Người lạ</div>':''}
         <div class="conv-last">${escHtml(conv.lastMsg || 'Chưa có tin nhắn')}</div>
       </div>
       <div class="conv-meta">
-        <div class="conv-time">${conv.lastTime || ''}</div>
+        <div style="display:flex;align-items:center;gap:4px">
+          ${isPinnedConv ? `<span class="conv-pin-ico" title="Đã ghim hội thoại">${UI_ICONS.pin}</span>` : ''}
+          ${isMuted ? `<span class="conv-meta-icons" title="Đã tắt thông báo">${UI_ICONS.bellOff}</span>` : ''}
+          <div class="conv-time">${escHtml(lastTs)}</div>
+        </div>
         ${conv.unread > 0 ? `<div class="conv-unread">${conv.unread > 99 ? '99+' : conv.unread}</div>` : ''}
       </div>`;
     dom.convList.appendChild(item);
@@ -1138,24 +1868,27 @@ function renderMessages(forceBottom = false) {
 
   let lastDay = '';
   let previous = null;
+  const msgs = conv.messages;
 
-  for (const msg of conv.messages) {
+  for (let i = 0; i < msgs.length; i++) {
+    const msg = msgs[i];
     const isSys = msg.type === 'system' || msg.messageType === 'system' || msg.from === 'SYSTEM';
     if (!isSys && msg.from) requestUserProfile(msg.from);
     const day = getDayLabel(msg.timestamp);
 
-    // Mỗi ngày mới bắt đầu một nhóm tin nhắn mới.
+    let showedDayBreak = false;
     if (day !== lastDay) {
       const dayLabel = document.createElement('div');
       dayLabel.className = 'msg-day-label';
-      dayLabel.textContent = day;
+      dayLabel.textContent = day === 'Hôm nay' ? 'Hôm nay' : `${formatTime(msg.timestamp)} ${day}`;
       dom.messages.appendChild(dayLabel);
       lastDay = day;
       previous = null;
+      showedDayBreak = true;
     }
 
     if (isSys) {
-      appendMessageDOM(msg, false);
+      appendMessageDOM(msg, false, true, false);
       previous = null;
       continue;
     }
@@ -1164,24 +1897,24 @@ function renderMessages(forceBottom = false) {
     const previousTime = previous ? new Date(previous.timestamp).getTime() : 0;
     const gap = previous ? currentTime - previousTime : Infinity;
 
-    // Mốc thời gian mới sau khi đổi người gửi hoặc cách nhau ít nhất 1 giờ.
-    const startsNewGroup = !previous || previous.from !== msg.from || gap >= 3600000;
-    if (!previous || gap >= 3600000) {
+    const startsNewGroup = !previous || previous.from !== msg.from || gap >= 300000;
+    if (!showedDayBreak && (!previous || gap >= 3600000)) {
       const timeLabel = document.createElement('div');
       timeLabel.className = 'msg-time-break';
-      timeLabel.textContent = gap >= 86400000
-        ? new Date(msg.timestamp).toLocaleString('vi-VN', {
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit'
-          })
-        : new Date(msg.timestamp).toLocaleTimeString('vi-VN', {
-            hour: '2-digit', minute: '2-digit', second: '2-digit'
-          });
+      timeLabel.textContent = new Date(msg.timestamp).toLocaleTimeString('vi-VN', {
+        hour: '2-digit', minute: '2-digit'
+      });
       dom.messages.appendChild(timeLabel);
     }
 
-    // Avatar được tạo cho tin nhắn đầu nhóm, bất kể đó là văn bản hay hình ảnh.
-    appendMessageDOM(msg, !startsNewGroup);
+    const nextMsg = msgs[i + 1];
+    const nextIsSys = nextMsg && (nextMsg.type === 'system' || nextMsg.messageType === 'system' || nextMsg.from === 'SYSTEM');
+    const nextGap = nextMsg ? (new Date(nextMsg.timestamp).getTime() - currentTime) : Infinity;
+    const nextSameDay = nextMsg && getDayLabel(nextMsg.timestamp) === day;
+    const isLastInGroup = !nextMsg || nextIsSys || !nextSameDay || nextMsg.from !== msg.from || nextGap >= 300000;
+    const isVeryLastMine = (i === msgs.length - 1) && msg.from === state.username && msg.type !== 'revoked';
+
+    appendMessageDOM(msg, !startsNewGroup, isLastInGroup, isVeryLastMine);
     previous = msg;
   }
 
@@ -1195,7 +1928,7 @@ function renderMessages(forceBottom = false) {
   else box.scrollTop = prevTop;
 }
 
-function appendMessageDOM(msg, grouped=false) {
+function appendMessageDOM(msg, grouped=false, isLastInGroup=true, isVeryLastMine=false) {
   const msgType=typeof msg.type==='string'?msg.type.toLowerCase():'';
   if (msgType === 'system' || msg.messageType === 'system' || msg.from === 'SYSTEM') {
     const el=document.createElement('div');
@@ -1205,28 +1938,59 @@ function appendMessageDOM(msg, grouped=false) {
     return;
   }
   const isMine=msg.from===state.username;
+  const isSelected = Boolean(msg.messageId && state.multiSelectMode && state.selectedMsgIds.has(msg.messageId));
   const wrapper=document.createElement('div');
-  wrapper.className=`message-item ${isMine?'mine':'theirs'}${grouped?' grouped':''}`;
+  wrapper.className=`message-item ${isMine?'mine':'theirs'}${grouped?' grouped':''}${isSelected?' msg-selected':''}`;
   if(msg.messageId)wrapper.dataset.msgId=msg.messageId;
+  if (state.multiSelectMode && msg.messageId) {
+    wrapper.onclick = (e) => {
+      if (e.target.closest('button, a, video, audio')) return;
+      toggleSelectMessage(msg.messageId);
+    };
+  }
   const inDm=state.currentConvId?.startsWith('dm:');
   const inGroup=state.currentConvId?.startsWith('group:');
   const groupObj=inGroup?state.groups.get(state.currentConvId.replace('group:','')):null;
   const isGroupOwner=Boolean(inGroup && groupObj && groupObj.createdBy === state.username);
   const canRevokeBothSides=isMine || isGroupOwner;
-  const showSender=!isMine&&!inDm;
+  const showSender=!isMine&&!inDm&&!grouped;
   const senderInCard=msgType==='file_share'&&isFileCardMsg(msg);
-  let bubbleContent=msgType==='file_share'?buildFileBubble(msg,isMine,showSender):`<div class="msg-bubble">${renderMessageText(msg.content)}</div>`;
   const time=formatTime(msg.timestamp);
-  const replyCard=msg.replyToId?`<div class="message-reply-context"><b>${escHtml(msg.replyToUsername||'')}</b><span>${escHtml(msg.replyToContent||'Tin nhắn được trả lời')}</span></div>`:'';
-  const bodyHtml=`<div class="msg-body">${showSender&&!senderInCard?`<div class="msg-sender">${escHtml(msg.from||'')}</div>`:''}${replyCard}${bubbleContent}<div class="msg-time">${time}</div></div>`;
+  const starBadge = msg.starred ? `<span class="msg-star-badge" title="Tin nhắn đã đánh dấu">★</span>` : '';
+  const metaHtml = (isLastInGroup || msg.starred)
+    ? `<div class="msg-bubble-meta-row">${starBadge}${isLastInGroup ? `<span class="msg-bubble-time">${time}</span>` : ''}</div>`
+    : '';
+  const replyCard = msg.replyToId
+    ? `<div class="message-reply-context" title="Nhảy đến tin nhắn được trả lời" onclick="event.stopPropagation();jumpToMessage('${escHtml(msg.replyToId)}')"><b>${escHtml(msg.replyToUsername || '')}</b><span>${escHtml(msg.replyToContent || 'Tin nhắn được trả lời')}</span></div>`
+    : '';
+  let bubbleContent = msgType === 'file_share'
+    ? buildFileBubble(msg, isMine, showSender)
+    : `<div class="msg-bubble">${replyCard}${renderMessageText(msg.content)}${metaHtml}</div>`;
+  let deliveredPill = '';
+  if (isVeryLastMine) {
+    const convObj = state.conversations.get(state.currentConvId);
+    const peerOnline = inDm
+      ? Boolean(convObj?.name && state.onlineUsers.includes(convObj.name))
+      : Boolean(groupObj && (groupObj.members || []).some(u => u !== state.username && state.onlineUsers.includes(u)));
+    deliveredPill = `<div class="msg-delivered-pill">${peerOnline ? '✓✓ Đã nhận' : '✓ Đã gửi'}</div>`;
+  }
+  const actions=msg.messageId?`<div class="msg-actions" onclick="event.stopPropagation()">
+    <button type="button" class="msg-act-circle" title="Trả lời" onclick="replyToMessage('${msg.messageId}')">${UI_ICONS.quote}</button>
+    <button type="button" class="msg-act-circle" title="Chuyển tiếp" onclick="forwardMessage('${msg.messageId}')">${UI_ICONS.forward}</button>
+    <button type="button" class="msg-act-circle more" title="Thêm" onclick="openMessageMenu(event,'${msg.messageId}')">${UI_ICONS.dotsH}</button>
+  </div>`:'';
+  const bodyHtml=`<div class="msg-body">${showSender&&!senderInCard?`<div class="msg-sender">${escHtml(msg.from||'')}</div>`:''}${msgType==='file_share'?replyCard:''}<div class="msg-bubble-row">${bubbleContent}${actions}</div>${deliveredPill}<div class="msg-time">${time}</div></div>`;
+  const selectChk = msg.messageId
+    ? `<button type="button" class="msg-select-chk" aria-label="Chọn tin nhắn" onclick="event.stopPropagation();toggleSelectMessage('${msg.messageId}')">${isSelected?'✓':''}</button>`
+    : '';
   // Avatar nằm cùng hàng với bong bóng; trong nhóm có thể bấm vào avatar người khác để mở combobox thao tác, và hiện chìa khóa vàng nếu người nhắn là trưởng nhóm.
   const clickableAvatar = inGroup && !isMine && Boolean(msg.from);
-  const isSenderGroupOwner = Boolean(inGroup && groupObj && msg.from && groupObj.createdBy === msg.from);
+  const isSenderGroupOwner = Boolean(inGroup && groupObj && msg.from && groupObj.createdBy === msg.from && getGroupSettings(groupObj).highlightOwnerMsg !== false);
   const senderAvatar = grouped ? '<div class="msg-av-spacer" aria-hidden="true"></div>' : avatarMarkup(msg.from || '?', 'msg-av', clickableAvatar, isSenderGroupOwner);
-  wrapper.innerHTML = `${senderAvatar}${bodyHtml}`;
+  wrapper.innerHTML = `${selectChk}${senderAvatar}${bodyHtml}`;
   if(msgType==='revoked'){
     const body=wrapper.querySelector('.msg-body');
-    body.innerHTML=`<div class="revoked-note">Tin nhắn đã được thu hồi</div>${isMine?`<button class="delete-revoked-btn" onclick="hideMessageForMe('${msg.messageId}')">Xóa thông báo</button>`:''}<div class="msg-time">${time}</div>`;
+    body.innerHTML=`<div class="revoked-note">Tin nhắn đã được thu hồi</div><button class="delete-revoked-btn" onclick="hideMessageForMe('${msg.messageId}')">Xóa chỉ ở phía tôi</button><div class="msg-time">${time}</div>`;
     dom.messages.appendChild(wrapper);return;
   }
   const counts={};(msg.reactions||[]).forEach(r=>{if(r.emoji)counts[r.emoji]=(counts[r.emoji]||0)+1;});
@@ -1236,23 +2000,333 @@ function appendMessageDOM(msg, grouped=false) {
   const picker=pickerEmojis.map(emoji=>`<button type="button" class="reaction-option${myReaction?.emoji===emoji?' selected':''}" title="${emoji}" onclick="event.stopPropagation();reactToMessage('${msg.messageId}','${emoji}')">${emoji}</button>`).join('');
   const reactionBox=msg.messageId?`<div class="message-reaction-area" onclick="event.stopPropagation()">
     <div class="reaction-picker">${picker}</div>
-    <button type="button" class="reaction-trigger${myReaction?' has-reaction':''}" title="${myReaction?'Xem người đã bày tỏ':'Bày tỏ cảm xúc'}" onclick="${myReaction?`showReactionPeople('${msg.messageId}')`:`this.parentElement.classList.toggle('picker-open')`}">${myReaction?myReaction.emoji:'♡'}</button>
+    <button type="button" class="reaction-trigger${myReaction?' has-reaction':''}" title="${myReaction?'Xem người đã bày tỏ':'Bày tỏ cảm xúc'}" onclick="${myReaction?`showReactionPeople('${msg.messageId}')`:`this.parentElement.classList.toggle('picker-open')`}">${myReaction?escHtml(myReaction.emoji):UI_ICONS.thumbUp}</button>
   </div>`:'';
   const reactionPills=(msg.messageId&&reactionItems)?`<div class="msg-reactions">${reactionItems}</div>`:'';
-  const actions=msg.messageId?`<div class="msg-actions">
-    <button class="msg-action-btn" onclick="replyToMessage('${msg.messageId}')">Trả lời</button><button class="msg-action-btn" onclick="forwardMessage('${msg.messageId}')">Chuyển tiếp</button>
-    ${isMine?`<button class="msg-action-btn" onclick="hideMessageForMe('${msg.messageId}')">Xóa ở phía tôi</button>`:''}
-    ${canRevokeBothSides?`<button class="msg-action-btn" onclick="revokeMessage('${msg.messageId}')">Thu hồi hai phía</button>`:''}
-  </div>`:'';
   const body=wrapper.querySelector('.msg-body');
+  const bubbleRow=wrapper.querySelector('.msg-bubble-row');
   if(body) {
-    body.insertAdjacentHTML('beforeend', actions);
     const bubble = body.querySelector('.msg-bubble');
+    const attachTarget = bubble || bubbleRow;
+    if (attachTarget && msg.messageId) {
+      attachTarget.oncontextmenu = (ev) => {
+        if (state.multiSelectMode) return;
+        const sel = window.getSelection()?.toString();
+        if (sel) return;
+        openMessageContextMenu(ev, msg.messageId);
+      };
+    }
     if (bubble && reactionBox) bubble.insertAdjacentHTML('beforeend', reactionBox);
-    else if (reactionBox) body.insertAdjacentHTML('afterbegin', reactionBox);
-    if (bubble && reactionPills) bubble.insertAdjacentHTML('afterend', reactionPills);
+    else if (bubbleRow && reactionBox) bubbleRow.insertAdjacentHTML('beforeend', reactionBox);
+    if (bubbleRow && reactionPills) bubbleRow.insertAdjacentHTML('afterend', reactionPills);
   }
   dom.messages.appendChild(wrapper);
+}
+
+// ─── Zalo Message Menu (... / Right Click), Pin, Star, Multi-select & Details ─
+function closeMessageMenu() {
+  document.querySelector('.zalo-msg-menu')?.remove();
+  document.querySelectorAll('.message-item.menu-open').forEach(el => el.classList.remove('menu-open'));
+  state.activeMsgMenuId = null;
+}
+
+function openMessageContextMenu(event, messageId) {
+  event.preventDefault();
+  openMessageMenu(event, messageId);
+}
+
+function openMessageMenu(event, messageId) {
+  event.stopPropagation();
+  const alreadyOpen = state.activeMsgMenuId === messageId && document.querySelector('.zalo-msg-menu');
+  closeMessageMenu();
+  if (alreadyOpen) return;
+
+  const conv = state.conversations.get(state.currentConvId);
+  const msg = conv?.messages.find(m => m.messageId === messageId);
+  if (!conv || !msg) return;
+
+  state.activeMsgMenuId = messageId;
+  const itemEl = dom.messages?.querySelector(`.message-item[data-msg-id="${CSS.escape(messageId)}"]`);
+  if (itemEl) itemEl.classList.add('menu-open');
+
+  const isMine = msg.from === state.username;
+  const inGroup = state.currentConvId?.startsWith('group:');
+  const groupObj = inGroup ? state.groups.get(state.currentConvId.replace('group:', '')) : null;
+  const isGroupOwner = Boolean(inGroup && groupObj && groupObj.createdBy === state.username);
+  const canRevokeBothSides = isMine || isGroupOwner;
+  const isPinned = conv.pinnedMessage?.messageId === messageId;
+  const isStarred = Boolean(msg.starred);
+  const hasFile = Boolean(msg.fileId);
+
+  const menu = document.createElement('div');
+  menu.className = 'zalo-msg-menu';
+  menu.onclick = (e) => e.stopPropagation();
+  menu.innerHTML = `
+    <button type="button" class="zalo-mmenu-item" onclick="closeMessageMenu();copyMessageText('${escHtml(messageId)}')">
+      <span class="zalo-mmenu-ico">${UI_ICONS.copy}</span><span class="zalo-mmenu-lbl">Copy tin nhắn</span>
+    </button>
+    <div class="zalo-mmenu-sep"></div>
+    <button type="button" class="zalo-mmenu-item" onclick="closeMessageMenu();togglePinMessage('${escHtml(messageId)}')">
+      <span class="zalo-mmenu-ico">${UI_ICONS.pin}</span><span class="zalo-mmenu-lbl">${isPinned ? 'Bỏ ghim tin nhắn' : 'Ghim tin nhắn'}</span>
+    </button>
+    <button type="button" class="zalo-mmenu-item" onclick="closeMessageMenu();toggleStarMessage('${escHtml(messageId)}')">
+      <span class="zalo-mmenu-ico" style="${isStarred ? 'color:#f5a623' : ''}">${UI_ICONS.star}</span><span class="zalo-mmenu-lbl">${isStarred ? 'Bỏ đánh dấu tin nhắn' : 'Đánh dấu tin nhắn'}</span>
+    </button>
+    <button type="button" class="zalo-mmenu-item" onclick="closeMessageMenu();enterMultiSelectMode('${escHtml(messageId)}')">
+      <span class="zalo-mmenu-ico">${UI_ICONS.checkList}</span><span class="zalo-mmenu-lbl">Chọn nhiều tin nhắn</span>
+    </button>
+    <button type="button" class="zalo-mmenu-item" onclick="closeMessageMenu();openMessageDetails('${escHtml(messageId)}')">
+      <span class="zalo-mmenu-ico">${UI_ICONS.info}</span><span class="zalo-mmenu-lbl">Xem chi tiết</span>
+    </button>
+    <div class="zalo-mmenu-item has-sub" onclick="this.classList.toggle('sub-open')">
+      <span class="zalo-mmenu-ico"></span>
+      <span class="zalo-mmenu-lbl">Tuỳ chọn khác</span>
+      <span class="zalo-mmenu-chev">${UI_ICONS.chevronRight}</span>
+      <div class="zalo-msg-submenu">
+        <button type="button" class="zalo-mmenu-item" onclick="event.stopPropagation();closeMessageMenu();replyToMessage('${escHtml(messageId)}')">
+          <span class="zalo-mmenu-ico">${UI_ICONS.quote}</span><span class="zalo-mmenu-lbl">Trả lời</span>
+        </button>
+        <button type="button" class="zalo-mmenu-item" onclick="event.stopPropagation();closeMessageMenu();forwardMessage('${escHtml(messageId)}')">
+          <span class="zalo-mmenu-ico">${UI_ICONS.forward}</span><span class="zalo-mmenu-lbl">Chuyển tiếp</span>
+        </button>
+        ${hasFile ? `<button type="button" class="zalo-mmenu-item" onclick="event.stopPropagation();closeMessageMenu();saveFileWithLocation('/api/files/${encodeURIComponent(msg.fileId)}','${(msg.filename||'file').replace(/'/g,"\\'")}','${escHtml(msg.fileId)}')">
+          <span class="zalo-mmenu-ico">${UI_ICONS.download}</span><span class="zalo-mmenu-lbl">Tải tệp về máy</span>
+        </button>` : ''}
+      </div>
+    </div>
+    <div class="zalo-mmenu-sep"></div>
+    ${canRevokeBothSides ? `<button type="button" class="zalo-mmenu-item danger" onclick="closeMessageMenu();revokeMessage('${escHtml(messageId)}')">
+      <span class="zalo-mmenu-ico">${UI_ICONS.undo}</span><span class="zalo-mmenu-lbl">Thu hồi</span>
+    </button>` : ''}
+    <button type="button" class="zalo-mmenu-item danger" onclick="closeMessageMenu();hideMessageForMe('${escHtml(messageId)}')">
+      <span class="zalo-mmenu-ico">${UI_ICONS.trash}</span><span class="zalo-mmenu-lbl">Xóa chỉ ở phía tôi</span>
+    </button>
+  `;
+  document.body.appendChild(menu);
+
+  const menuW = 228;
+  const menuH = menu.offsetHeight || 310;
+  let left, top;
+  if (event.type === 'contextmenu') {
+    left = event.clientX + 4;
+    top = event.clientY + 4;
+  } else {
+    const rect = event.currentTarget.getBoundingClientRect();
+    left = isMine ? rect.left : rect.right + 6;
+    top = rect.top - Math.min(menuH * 0.4, 120);
+  }
+  if (left + menuW > window.innerWidth - 10) left = Math.max(10, window.innerWidth - menuW - 10);
+  if (top + menuH > window.innerHeight - 10) top = Math.max(10, window.innerHeight - menuH - 10);
+  if (top < 10) top = 10;
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+
+  const subEl = menu.querySelector('.zalo-msg-submenu');
+  if (subEl && left + menuW + 196 > window.innerWidth - 10) subEl.classList.add('open-left');
+}
+
+function getMessageCopyableText(msg) {
+  if (!msg) return '';
+  if (msg.content) return msg.content;
+  if (msg.filename) return msg.filename;
+  if (msg.fileId) return `${location.origin}/api/files/${msg.fileId}`;
+  return '';
+}
+
+async function copyTextToClipboard(text) {
+  if (!text) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (_) { return false; }
+}
+
+async function copyMessageText(messageId) {
+  const conv = state.conversations.get(state.currentConvId);
+  const msg = conv?.messages.find(m => m.messageId === messageId);
+  const txt = getMessageCopyableText(msg);
+  if (!txt) { showToast('Không có nội dung văn bản để sao chép.', 'info'); return; }
+  const ok = await copyTextToClipboard(txt);
+  showToast(ok ? 'Đã sao chép tin nhắn.' : 'Không thể truy cập clipboard.', ok ? 'success' : 'error');
+}
+
+function togglePinMessage(messageId) {
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv) return;
+  if (conv.type === 'group') {
+    const g = state.groups.get(conv.id.replace('group:', ''));
+    if (g && g.createdBy !== state.username && getGroupSettings(g).allowPin === false) {
+      showToast('Chỉ trưởng nhóm mới được phép ghim tin nhắn.', 'error');
+      return;
+    }
+  }
+  if (conv.pinnedMessage?.messageId === messageId) {
+    wsSend({ type: 'unpin_message', conversationId: state.currentConvId });
+  } else {
+    wsSend({ type: 'pin_message', messageId, conversationId: state.currentConvId });
+  }
+}
+
+function unpinCurrentMessage(event) {
+  event?.stopPropagation();
+  if (!state.currentConvId) return;
+  wsSend({ type: 'unpin_message', conversationId: state.currentConvId });
+}
+
+function renderPinnedBanner() {
+  const bar = $('pinned-msg-bar');
+  if (!bar) return;
+  const conv = state.conversations.get(state.currentConvId);
+  const pin = conv?.pinnedMessage;
+  if (!pin || !pin.messageId) {
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+    return;
+  }
+  const preview = pin.content || (pin.filename ? `[Tệp] ${pin.filename}` : 'Tin nhắn đã ghim');
+  bar.style.display = 'flex';
+  bar.onclick = () => jumpToMessage(pin.messageId);
+  bar.innerHTML = `
+    <span class="zalo-pinned-ico">${UI_ICONS.pin}</span>
+    <div class="zalo-pinned-text">
+      <div class="zalo-pinned-title">Tin nhắn đã ghim</div>
+      <div class="zalo-pinned-sub"><b>${escHtml(pin.sender || '')}:</b> ${escHtml(preview)}</div>
+    </div>
+    <button type="button" class="zalo-pinned-close" onclick="unpinCurrentMessage(event)">Bỏ ghim</button>
+  `;
+}
+
+function jumpToMessage(messageId) {
+  const el = dom.messages?.querySelector(`.message-item[data-msg-id="${CSS.escape(messageId)}"]`);
+  if (!el) { showToast('Tin nhắn này không nằm trong lịch sử hiển thị hiện tại.', 'info'); return; }
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('msg-jump-flash');
+  setTimeout(() => el.classList.remove('msg-jump-flash'), 1600);
+}
+
+function toggleStarMessage(messageId) {
+  if (!state.currentConvId || !messageId) return;
+  wsSend({ type: 'toggle_star_message', messageId, conversationId: state.currentConvId });
+}
+
+function enterMultiSelectMode(initialMessageId = null) {
+  state.multiSelectMode = true;
+  state.selectedMsgIds = new Set(initialMessageId ? [initialMessageId] : []);
+  renderMessages();
+  renderMultiSelectBar();
+}
+
+function exitMultiSelectMode() {
+  if (!state.multiSelectMode && state.selectedMsgIds.size === 0) return;
+  state.multiSelectMode = false;
+  state.selectedMsgIds.clear();
+  dom.messages?.classList.remove('multi-select-active');
+  renderMessages();
+  renderMultiSelectBar();
+}
+
+function toggleSelectMessage(messageId) {
+  if (!messageId) return;
+  if (state.selectedMsgIds.has(messageId)) state.selectedMsgIds.delete(messageId);
+  else state.selectedMsgIds.add(messageId);
+  const el = dom.messages?.querySelector(`.message-item[data-msg-id="${CSS.escape(messageId)}"]`);
+  if (el) {
+    const active = state.selectedMsgIds.has(messageId);
+    el.classList.toggle('msg-selected', active);
+    const chk = el.querySelector('.msg-select-chk');
+    if (chk) chk.textContent = active ? '✓' : '';
+  }
+  renderMultiSelectBar();
+}
+
+function renderMultiSelectBar() {
+  const bar = $('multi-select-bar');
+  const shell = document.querySelector('#input-bar .composer-shell');
+  if (!bar) return;
+  if (!state.multiSelectMode) {
+    dom.messages?.classList.remove('multi-select-active');
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+    if (shell) shell.style.display = '';
+    return;
+  }
+  dom.messages?.classList.add('multi-select-active');
+  if (shell) shell.style.display = 'none';
+  bar.style.display = 'flex';
+  const count = state.selectedMsgIds.size;
+  bar.innerHTML = `
+    <span class="zalo-ms-count">Đã chọn ${count} tin nhắn</span>
+    <div class="zalo-ms-actions">
+      <button type="button" class="zalo-ms-btn" onclick="multiSelectCopy()" ${count === 0 ? 'disabled' : ''}>Copy</button>
+      <button type="button" class="zalo-ms-btn primary" onclick="multiSelectForward()" ${count === 0 ? 'disabled' : ''}>Chuyển tiếp</button>
+      <button type="button" class="zalo-ms-btn danger" onclick="multiSelectDeleteForMe()" ${count === 0 ? 'disabled' : ''}>Xóa ở phía tôi</button>
+      <button type="button" class="zalo-ms-btn" onclick="exitMultiSelectMode()">Hủy</button>
+    </div>
+  `;
+}
+
+async function multiSelectCopy() {
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv) return;
+  const lines = conv.messages
+    .filter(m => state.selectedMsgIds.has(m.messageId))
+    .map(m => `${m.from || ''}: ${getMessageCopyableText(m)}`)
+    .filter(Boolean);
+  if (!lines.length) return;
+  const ok = await copyTextToClipboard(lines.join('\n'));
+  showToast(ok ? `Đã sao chép ${lines.length} tin nhắn.` : 'Không thể sao chép.', ok ? 'success' : 'error');
+  exitMultiSelectMode();
+}
+
+function multiSelectForward() {
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv) return;
+  const selected = conv.messages.filter(m => state.selectedMsgIds.has(m.messageId));
+  if (!selected.length) return;
+  exitMultiSelectMode();
+  openForwardPicker(selected);
+}
+
+function multiSelectDeleteForMe() {
+  const ids = [...state.selectedMsgIds];
+  if (!ids.length) return;
+  if (!confirm(`Xóa ${ids.length} tin nhắn đã chọn chỉ ở phía bạn?`)) return;
+  ids.forEach(messageId => wsSend({ type: 'delete_message_for_me', messageId, conversationId: state.currentConvId }));
+  exitMultiSelectMode();
+}
+
+function openMessageDetails(messageId) {
+  const conv = state.conversations.get(state.currentConvId);
+  const m = conv?.messages.find(x => x.messageId === messageId);
+  if (!m) return;
+  const fullTime = formatDateTimeFull(m.timestamp) || m.timestamp || '';
+  const typeLabel = m.fileId ? `Tệp đính kèm (${m.mimeType || 'file'})` : 'Tin nhắn văn bản';
+  const bodyText = m.content || (m.filename ? `${m.filename} (${m.fileSize || ''})` : '');
+  const reactions = (m.reactions || []).map(r => `${escHtml(r.username)} ${escHtml(r.emoji)}`).join(', ') || 'Chưa có';
+  openGroupActionModal(
+    'Chi tiết tin nhắn',
+    `<div class="zalo-acc-kv" style="padding:4px 0">
+       <div class="zalo-acc-k">Người gửi</div><div class="zalo-acc-v"><b>${escHtml(m.from || '')}</b></div>
+       <div class="zalo-acc-k">Hội thoại</div><div class="zalo-acc-v">${escHtml(conv.name || '')}</div>
+       <div class="zalo-acc-k">Thời gian</div><div class="zalo-acc-v">${escHtml(fullTime)}</div>
+       <div class="zalo-acc-k">Loại</div><div class="zalo-acc-v">${escHtml(typeLabel)}</div>
+       <div class="zalo-acc-k">Cảm xúc</div><div class="zalo-acc-v">${reactions}</div>
+       <div class="zalo-acc-k">Nội dung</div><div class="zalo-acc-v" style="white-space:pre-wrap">${escHtml(bodyText)}</div>
+     </div>`,
+    `<button class="btn-primary" onclick="closeGroupActionModal()">Đóng</button>`
+  );
 }
 
 // ─── Combobox / Popover khi bấm vào Avatar người nhắn trong nhóm ──────────────
@@ -1272,22 +2346,25 @@ function openAvatarActionMenu(event, targetUsername) {
   const menu = document.createElement('div');
   menu.className = 'avatar-action-popover';
   menu.innerHTML = `
-    <div class="avatar-popover-head">${userAvatarInner(targetUsername)}<span>${escHtml(targetUsername)}</span></div>
+    <div class="avatar-popover-head"><div class="conv-avatar" style="width:28px;height:28px;font-size:12px">${userAvatarInner(targetUsername)}</div><span>${escHtml(targetUsername)}</span></div>
     <button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();startChat('${escHtml(targetUsername)}')">
       ${UI_ICONS.chat}<span>Nhắn tin</span>
     </button>
     <button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();openProfilePage('${escHtml(targetUsername)}')">
       ${UI_ICONS.user}<span>Xem trang cá nhân</span>
     </button>
-    ${isOwner ? `<button type="button" class="avatar-popover-item danger" onclick="closeAvatarActionMenu();kickGroupMember('${escHtml(gid)}','${escHtml(targetUsername)}')">
+    ${isOwner ? `<button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();confirmTransferGroupOwnerDirect('${escHtml(gid)}','${escHtml(targetUsername)}')">
+      ${UI_ICONS.crown}<span>Nhượng quyền trưởng nhóm</span>
+    </button>
+    <button type="button" class="avatar-popover-item danger" onclick="closeAvatarActionMenu();kickGroupMember('${escHtml(gid)}','${escHtml(targetUsername)}')">
       ${UI_ICONS.userMinus}<span>Xóa khỏi nhóm</span>
     </button>` : ''}
   `;
   document.body.appendChild(menu);
 
   const rect = event.currentTarget.getBoundingClientRect();
-  const menuW = 205;
-  const menuH = isOwner ? 148 : 112;
+  const menuW = 215;
+  const menuH = isOwner ? 186 : 112;
   let left = rect.right + 8;
   let top = rect.top;
   if (left + menuW > window.innerWidth - 12) left = Math.max(12, rect.left - menuW - 8);
@@ -1310,28 +2387,141 @@ function showReactionPeople(messageId){
   overlay.innerHTML=`<div class="reaction-people-card"><div class="reaction-people-head"><b>Cảm xúc</b><button onclick="this.closest('.reaction-people-overlay').remove()">×</button></div><div class="reaction-people-list">${rows}</div></div>`;
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});dom.messages.appendChild(overlay);
 }
-function replyToMessage(messageId){
-  const conv=state.conversations.get(state.currentConvId),m=conv?.messages.find(x=>x.messageId===messageId);if(!m)return;
-  state.replyTo=m;let el=$('reply-preview');if(!el){el=document.createElement('div');el.id='reply-preview';el.className='reply-preview';$('input-bar').prepend(el);}
-  el.innerHTML=`<span>Đang trả lời <b>${escHtml(m.from)}</b>: ${escHtml((m.content||m.filename||'Tệp đính kèm').slice(0,120))}</span><button onclick="state.replyTo=null;this.parentElement.remove()">×</button>`;dom.messageInput.focus();
+function renderReplyMentionChip() {
+  const chip = $('reply-mention-chip');
+  if (!chip) return;
+  if (state.replyMention) {
+    chip.textContent = `@${state.replyMention}`;
+    chip.style.display = 'inline-flex';
+  } else {
+    chip.textContent = '';
+    chip.style.display = 'none';
+  }
 }
-function forwardMessage(messageId){
-  const conv=state.conversations.get(state.currentConvId),m=conv?.messages.find(x=>x.messageId===messageId);if(!m)return;
+function clearReplyMention() {
+  state.replyMention = null;
+  renderReplyMentionChip();
+  updateComposerActionBtn();
+  dom.messageInput?.focus();
+}
+function clearReply() {
+  state.replyTo = null;
+  state.replyMention = null;
+  $('reply-preview')?.remove();
+  renderReplyMentionChip();
+  updateComposerActionBtn();
+}
+function summarizeReplyTarget(m) {
+  if (!m) return 'Tin nhắn';
+  const mime = m.mimeType || '';
+  if (m.fileId) {
+    if (mime.startsWith('image/')) return '[Hình ảnh]';
+    if (mime.startsWith('video/')) return `[Video] ${m.filename || ''}`.trim();
+    if (mime.startsWith('audio/')) return '[Tin nhắn thoại]';
+    return `[Tệp] ${m.filename || 'Tệp đính kèm'}`;
+  }
+  return String(m.content || 'Tin nhắn').replace(/\s+/g, ' ').trim();
+}
+function replyToMessage(messageId) {
+  const conv = state.conversations.get(state.currentConvId), m = conv?.messages.find(x => x.messageId === messageId);
+  if (!m) return;
+  state.replyTo = m;
+  const inGroup = Boolean(state.currentConvId?.startsWith('group:'));
+  state.replyMention = (inGroup && m.from && m.from !== state.username) ? m.from : null;
+  renderReplyMentionChip();
+  updateComposerActionBtn();
+
+  const shell = document.querySelector('#input-bar .composer-shell');
+  const inputRow = shell?.querySelector('.input-row');
+  let el = $('reply-preview');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'reply-preview';
+    el.className = 'reply-preview';
+    if (shell && inputRow) shell.insertBefore(el, inputRow);
+    else if (shell) shell.appendChild(el);
+    else $('input-bar')?.prepend(el);
+  }
+  const previewText = summarizeReplyTarget(m).slice(0, 120);
+  const thumbHtml = (m.fileId && m.mimeType?.startsWith('image/'))
+    ? `<img class="reply-preview-thumb" src="/api/files/${encodeURIComponent(m.fileId)}" alt="">`
+    : '';
+  el.innerHTML = `
+    <div class="reply-preview-body">
+      <div class="reply-preview-top">${UI_ICONS.quote}<span>Trả lời <b>${escHtml(m.from || '')}</b></span></div>
+      <div class="reply-preview-txt">${escHtml(previewText)}</div>
+    </div>
+    ${thumbHtml}
+    <button type="button" class="reply-preview-close" title="Hủy trả lời" onclick="clearReply()">×</button>
+  `;
+  dom.messageInput?.focus();
+}
+function forwardMessage(messageId) {
+  const conv = state.conversations.get(state.currentConvId), m = conv?.messages.find(x => x.messageId === messageId);
+  if (!m) return;
   openForwardPicker(m);
 }
-function openForwardPicker(message){
-  document.querySelector('.forward-overlay')?.remove();
-  const items=[...state.conversations.values()].filter(c=>c.id!==state.currentConvId).sort((a,b)=>(b.lastTimestamp||0)-(a.lastTimestamp||0));
-  const overlay=document.createElement('div');overlay.className='forward-overlay';overlay.innerHTML=`<div class="forward-card"><div class="forward-head"><b>Chuyển tiếp tin nhắn</b><button onclick="this.closest('.forward-overlay').remove()">×</button></div><input class="forward-search" placeholder="Tìm cá nhân hoặc nhóm..." oninput="filterForwardTargets(this.value)"><div class="forward-targets">${items.map(c=>`<label class="forward-target" data-search="${escHtml((c.name+' '+c.id).toLowerCase())}"><input type="checkbox" value="${escHtml(c.id)}"><span class="forward-target-avatar">${getInitials(c.name)}</span><span>${escHtml(c.name)}</span><small>${c.type==='group'?'Nhóm':'Cá nhân'}</small></label>`).join('')||'<p>Chưa có đoạn chat khác.</p>'}</div><button class="forward-send" onclick="sendForwardedMessage('${message.messageId}')">Chuyển tiếp</button></div>`;
-  overlay._message=message;overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});document.body.appendChild(overlay);
+function describeForwardPreview(messages) {
+  if (!messages.length) return '';
+  if (messages.length > 1) return `Đang chia sẻ ${messages.length} tin nhắn`;
+  return summarizeReplyTarget(messages[0]).slice(0, 140);
 }
-function filterForwardTargets(q){document.querySelectorAll('.forward-target').forEach(el=>el.style.display=el.dataset.search.includes(q.toLowerCase())?'flex':'none');}
-function sendForwardedMessage(messageId){
-  const overlay=document.querySelector('.forward-overlay'),message=overlay?._message;if(!overlay||!message)return;
-  const selected=[...overlay.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);if(!selected.length){showToast('Hãy chọn ít nhất một đoạn chat.','error');return;}
-  const body=message.content||message.filename||'Tệp đính kèm';
-  selected.forEach(id=>{const c=state.conversations.get(id);if(!c)return;const content=`${state.username} đã chuyển tiếp một tin nhắn.\n${body}`;if(c.type==='group')wsSend({type:'group_message',groupId:id.replace('group:',''),content});else wsSend({type:'private_message',to:c.name,content});});
-  overlay.remove();showToast(`Đã chuyển tiếp đến ${selected.length} đoạn chat.`,'success');
+function openForwardPicker(messageOrList) {
+  document.querySelector('.forward-overlay')?.remove();
+  const messages = Array.isArray(messageOrList) ? messageOrList.filter(Boolean) : [messageOrList].filter(Boolean);
+  if (!messages.length) return;
+  const items = [...state.conversations.values()].filter(c => c.id !== state.currentConvId).sort((a, b) => (b.lastTimestamp || 0) - (a.lastTimestamp || 0));
+  const targetHtml = items.map(c => {
+    const isGrp = c.type === 'group';
+    const avHtml = isGrp ? groupAvatarInner(c.id.replace('group:', ''), c.name) : userAvatarInner(c.name);
+    return `<label class="forward-target" data-search="${escHtml((c.name + ' ' + c.id).toLowerCase())}"><input type="checkbox" value="${escHtml(c.id)}"><span class="forward-target-avatar${isGrp ? ' group' : ''}">${avHtml}</span><span>${escHtml(c.name)}</span><small>${isGrp ? 'Nhóm' : 'Cá nhân'}</small></label>`;
+  }).join('') || '<p style="color:#6d7a8c;font-size:13px;padding:12px 0;text-align:center">Chưa có đoạn chat khác.</p>';
+  const overlay = document.createElement('div');
+  overlay.className = 'forward-overlay';
+  overlay.innerHTML = `<div class="forward-card"><div class="forward-head"><b>Chia sẻ</b><button onclick="this.closest('.forward-overlay').remove()">×</button></div><input class="forward-search" placeholder="Tìm kiếm cá nhân hoặc nhóm..." oninput="filterForwardTargets(this.value)"><div class="zalo-forward-preview">${escHtml(describeForwardPreview(messages))}</div><div class="forward-targets">${targetHtml}</div><input id="forward-note-input" class="zalo-forward-note" type="text" placeholder="Nhập tin nhắn kèm theo (tuỳ chọn)..."><button class="forward-send" onclick="sendForwardedMessage('${escHtml(messages[0].messageId || '')}')">Chia sẻ</button></div>`;
+  overlay._messages = messages;
+  overlay._message = messages[0];
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+function filterForwardTargets(q) { document.querySelectorAll('.forward-target').forEach(el => el.style.display = el.dataset.search.includes(q.toLowerCase()) ? 'flex' : 'none'); }
+function sendForwardedMessage(messageId) {
+  const overlay = document.querySelector('.forward-overlay');
+  const messages = overlay?._messages || (overlay?._message ? [overlay._message] : []);
+  if (!overlay || !messages.length) return;
+  const selected = [...overlay.querySelectorAll('input[type=checkbox]:checked')].map(x => x.value);
+  if (!selected.length) { showToast('Hãy chọn ít nhất một đoạn chat.', 'error'); return; }
+  const note = ($('forward-note-input')?.value || '').trim();
+  selected.forEach(id => {
+    const c = state.conversations.get(id);
+    if (!c) return;
+    const gid = c.type === 'group' ? id.replace('group:', '') : null;
+    messages.forEach(m => {
+      if (m.fileId) {
+        const payload = {
+          type: 'file_share',
+          fileId: m.fileId,
+          filename: m.filename || 'file',
+          fileSize: m.fileSize || '',
+          mimeType: m.mimeType || 'application/octet-stream',
+        };
+        if (c.type === 'group') payload.groupId = gid;
+        else payload.to = c.name;
+        wsSend(payload);
+      } else {
+        const content = String(m.content || '').trim();
+        if (!content) return;
+        if (c.type === 'group') wsSend({ type: 'group_message', groupId: gid, content });
+        else wsSend({ type: 'private_message', to: c.name, content });
+      }
+    });
+    if (note) {
+      if (c.type === 'group') wsSend({ type: 'group_message', groupId: gid, content: note });
+      else wsSend({ type: 'private_message', to: c.name, content: note });
+    }
+  });
+  overlay.remove();
+  showToast(`Đã chuyển tiếp đến ${selected.length} đoạn chat.`, 'success');
 }
 
 function isFileCardMsg(msg) {
@@ -1438,12 +2628,16 @@ function buildFileBubble(msg, isMine, showSender = false) {
 
   const fileId = String(msg.fileId || '');
   const done = isMine || getDownloadedFiles().has(fileId);
-  const statusText = isMine ? 'Đã gửi' : (done ? 'Đã tải xuống' : 'Nhấn để tải');
+  const statusText = isMine ? 'Đã gửi' : (done ? 'Đã tải xuống' : 'Nhấn để xem / tải');
+  const safeMime = (mime || '').replace(/'/g, "\\'");
+  const safeSize = (msg.fileSize || '').replace(/'/g, "\\'");
+  const safeAuthor = (msg.from || msg.username || '').replace(/'/g, "\\'");
+  const previewCall = `openFilePreviewModal('${escHtml(fileId)}','${rawName}','${safeMime}','${safeSize}','${safeAuthor}')`;
   return `<div class="msg-bubble file-card">
     <div class="file-card-sender">Người gửi: <b>${author}</b> · ${escHtml(sentAt)}</div>
     <div class="file-card-main">
-      ${fileTypeIcon(mime, msg.filename)}
-      <div class="file-card-info">
+      <div style="cursor:pointer" title="Nhấn để xem nội dung tệp" onclick="${previewCall}">${fileTypeIcon(mime, msg.filename)}</div>
+      <div class="file-card-info" title="Nhấn để xem nội dung tệp" onclick="${previewCall}">
         <div class="file-card-name" title="${filename}">${filename}</div>
         <div class="file-card-meta">
           <span class="file-card-size">${escHtml(msg.fileSize || '')}</span>
@@ -1451,11 +2645,834 @@ function buildFileBubble(msg, isMine, showSender = false) {
         </div>
       </div>
       <div class="file-card-actions">
+        <button type="button" class="file-card-btn" title="Xem nội dung tệp trực tiếp" onclick="${previewCall}">${UI_ICONS.eye}</button>
         <button type="button" class="file-card-btn" title="Chọn đường dẫn lưu tệp (Save As...)" onclick="saveFileWithLocation('${url}','${rawName}','${escHtml(fileId)}')">${UI_ICONS.folderSave}</button>
         <a class="file-card-btn" href="${url}" download="${filename}" title="Tải về thư mục Downloads" onclick="markFileDownloaded('${escHtml(fileId)}')">${UI_ICONS.download}</a>
       </div>
     </div>
   </div>`;
+}
+
+// ─── Xem trước nội dung File trực tiếp trên nền tảng (Bộ công cụ Word / Excel / PPT / PDF / Code) ─────
+function setPreviewHeaderTheme(themeClass) {
+  const hdr = document.querySelector('#file-preview-modal-overlay .file-preview-hdr');
+  if (!hdr) return;
+  hdr.classList.remove('theme-word', 'theme-excel', 'theme-ppt', 'theme-pdf', 'theme-code');
+  if (themeClass) hdr.classList.add(themeClass);
+}
+
+function releasePreviewBlobUrl() {
+  if (state.currentPreviewBlobUrl) {
+    try { URL.revokeObjectURL(state.currentPreviewBlobUrl); } catch (_) {}
+    state.currentPreviewBlobUrl = null;
+  }
+}
+
+async function openFilePreviewModal(fileId, filename = 'Tệp đính kèm', mimeType = '', fileSize = '', sender = '') {
+  if (!fileId) return;
+  const url = `/api/files/${encodeURIComponent(fileId)}`;
+  const ext = ((filename || '').split('.').pop() || '').toLowerCase();
+  const mime = (mimeType || '').toLowerCase();
+
+  // Nếu là ảnh hoặc video thì mở trình xem toàn màn hình
+  if (mime.startsWith('image/') || ['png','jpg','jpeg','gif','webp','bmp','svg'].includes(ext)) {
+    openImageViewer(url, filename);
+    return;
+  }
+  if (mime.startsWith('video/') || ['mp4','webm','mov','mkv'].includes(ext)) {
+    openVideoViewer(url, filename);
+    return;
+  }
+
+  const overlay = $('file-preview-modal-overlay');
+  const titleEl = $('file-preview-title');
+  const subEl = $('file-preview-subtitle');
+  const iconEl = $('file-preview-icon');
+  const bodyEl = $('file-preview-body');
+  const copyBtn = $('file-preview-copy-btn');
+  const saveAsBtn = $('file-preview-saveas-btn');
+  const dlBtn = $('file-preview-download-btn');
+  if (!overlay || !bodyEl) return;
+
+  releasePreviewBlobUrl();
+
+  let toolBadge = 'Trình xem tệp';
+  if (['docx','doc','rtf'].includes(ext)) {
+    setPreviewHeaderTheme('theme-word');
+    toolBadge = 'Công cụ Microsoft Word';
+  } else if (['xlsx','xls','csv','tsv'].includes(ext)) {
+    setPreviewHeaderTheme('theme-excel');
+    toolBadge = 'Công cụ Microsoft Excel';
+  } else if (['pptx','ppt'].includes(ext)) {
+    setPreviewHeaderTheme('theme-ppt');
+    toolBadge = 'Công cụ PowerPoint';
+  } else if (ext === 'pdf' || mime === 'application/pdf') {
+    setPreviewHeaderTheme('theme-pdf');
+    toolBadge = 'Công cụ đọc PDF';
+  } else {
+    setPreviewHeaderTheme('theme-code');
+    toolBadge = 'Trình xem Mã nguồn & Văn bản';
+  }
+
+  if (titleEl) titleEl.textContent = filename || 'Tệp đính kèm';
+  const metaParts = [toolBadge];
+  if (fileSize) metaParts.push(fileSize);
+  if (sender) metaParts.push(`Người gửi: ${sender}`);
+  if (subEl) subEl.textContent = metaParts.join(' · ');
+  if (iconEl) iconEl.innerHTML = fileTypeIcon(mimeType, filename);
+  if (copyBtn) copyBtn.style.display = 'none';
+  if (saveAsBtn) saveAsBtn.onclick = () => saveFileWithLocation(url, filename, fileId);
+  if (dlBtn) {
+    dlBtn.href = url;
+    dlBtn.download = filename || 'file';
+    dlBtn.onclick = () => markFileDownloaded(fileId);
+  }
+  state.currentPreviewText = '';
+  state.excelPreviewSheets = [];
+  state.pptPreviewSlides = [];
+
+  bodyEl.innerHTML = '<div style="margin:auto;padding:36px;color:#334155;font-size:14px;font-weight:600">Đang khởi tạo công cụ xem tệp...</div>';
+  overlay.classList.add('visible');
+
+  // 1. Công cụ đọc PDF chuyên dụng (tạo Blob application/pdf ngay trên trình duyệt để luôn mở PDF Reader thay vì bị tải về)
+  if (mime === 'application/pdf' || ext === 'pdf') {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Không tải được tệp PDF (' + res.status + ')');
+      const buf = await res.arrayBuffer();
+      const pdfBlob = new Blob([buf], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      state.currentPreviewBlobUrl = blobUrl;
+      bodyEl.innerHTML = `
+        <div class="office-toolbar" style="background:#202124;color:#e8eaed;border-bottom-color:#3c4043">
+          <div class="office-toolbar-group">
+            <span>📄 <b>Trình đọc PDF tích hợp</b> · Hỗ trợ phóng to, tìm kiếm, xoay trang và in trực tiếp</span>
+          </div>
+          <div class="office-toolbar-group">
+            <a class="office-tool-btn" href="${blobUrl}" target="_blank" rel="noopener" style="text-decoration:none;background:#3c4043;color:#fff;border-color:#5f6368">Mở toàn màn hình ở tab mới ↗</a>
+          </div>
+        </div>
+        <iframe class="file-preview-iframe" src="${blobUrl}" title="${escHtml(filename)}"></iframe>`;
+    } catch (err) {
+      bodyEl.innerHTML = `<div style="margin:auto;padding:32px;color:#ef4444;text-align:center">Lỗi mở PDF: ${escHtml(err.message || '')}</div>`;
+    }
+    return;
+  }
+
+  // 2. Công cụ nghe Audio
+  if (mime.startsWith('audio/') || ['mp3','wav','ogg','oga','m4a'].includes(ext)) {
+    bodyEl.innerHTML = `<div style="margin:auto;padding:40px;text-align:center">
+      <audio src="${url}" controls autoplay style="width:min(440px,80vw)"></audio>
+    </div>`;
+    return;
+  }
+
+  // 3. Giải mã trực tiếp trên trình duyệt (Word .docx, Excel .xlsx/.csv, PowerPoint .pptx, ZIP, Code/Text)
+  try {
+    const data = await parseFilePreviewClientSide(url, filename, ext, mime);
+
+    // ── CÔNG CỤ MICROSOFT WORD (.docx, .rtf) ──
+    if (data.mode === 'word') {
+      state.currentPreviewText = data.plainText || '';
+      if (copyBtn && state.currentPreviewText) copyBtn.style.display = 'inline-flex';
+      const wordCount = state.currentPreviewText ? state.currentPreviewText.trim().split(/\s+/).filter(Boolean).length : 0;
+      bodyEl.innerHTML = `
+        <div class="office-toolbar">
+          <div class="office-toolbar-group">
+            <span>📘 <b>Chế độ Tài liệu Word (Document View)</b></span>
+            <span style="color:#94a3b8">|</span>
+            <span>${data.paraCount || 1} đoạn văn · ${wordCount} từ</span>
+          </div>
+          <div class="office-toolbar-group">
+            <span>Thu phóng:</span>
+            <button type="button" class="office-tool-btn" onclick="setWordPreviewZoom(0.85)">85%</button>
+            <button type="button" class="office-tool-btn" onclick="setWordPreviewZoom(1)">100%</button>
+            <button type="button" class="office-tool-btn" onclick="setWordPreviewZoom(1.2)">120%</button>
+            <button type="button" class="office-tool-btn" onclick="printWordPreview()">🖨️ In tài liệu</button>
+          </div>
+        </div>
+        <div class="word-canvas">
+          <div class="word-pages-holder" id="word-preview-page">
+            <div class="word-page">
+              <div class="word-page-content">${data.html || '<p style="color:#94a3b8">(Tài liệu Word trống)</p>'}</div>
+            </div>
+          </div>
+        </div>`;
+      return;
+    }
+
+    // ── CÔNG CỤ MICROSOFT EXCEL (.xlsx, .csv, .tsv) ──
+    if (data.mode === 'excel') {
+      state.excelPreviewSheets = data.sheets || [];
+      state.currentPreviewText = data.plainText || '';
+      if (copyBtn && state.currentPreviewText) copyBtn.style.display = 'inline-flex';
+      renderExcelPreviewWorkspace(bodyEl, 0);
+      return;
+    }
+
+    // ── CÔNG CỤ MICROSOFT POWERPOINT (.pptx) ──
+    if (data.mode === 'ppt') {
+      state.pptPreviewSlides = data.slides || [];
+      state.currentPreviewText = data.plainText || '';
+      if (copyBtn && state.currentPreviewText) copyBtn.style.display = 'inline-flex';
+      renderPptPreviewWorkspace(bodyEl, 0);
+      return;
+    }
+
+    // ── CÔNG CỤ XEM GÓI NÉN (.zip) ──
+    if (data.mode === 'zip') {
+      const entries = data.entries || [];
+      const rows = entries.map(e => `
+        <div class="file-preview-zip-row">
+          <span>${e.dir ? '📁 ' : '📄 '}${escHtml(e.name)}</span>
+          <span style="color:#758398">${escHtml(e.size || (e.dir ? 'Thư mục' : ''))}</span>
+        </div>
+      `).join('') || '<div style="padding:20px;color:#758398;text-align:center">Tệp ZIP rỗng</div>';
+      bodyEl.innerHTML = `<div class="file-preview-zip-list">
+        <div style="font-size:13px;font-weight:700;color:#4a586e;margin-bottom:10px">📦 Danh sách tệp bên trong gói nén (${entries.length} mục):</div>
+        ${rows}
+      </div>`;
+      return;
+    }
+
+    // ── CÔNG CỤ TRÌNH XEM CODE & VĂN BẢN (.java, .js, .py, .sql, .json, .txt, .md...) ──
+    if (data.mode === 'text') {
+      const content = data.content || '';
+      state.currentPreviewText = content;
+      if (copyBtn) copyBtn.style.display = 'inline-flex';
+      const lines = content.split(/\r?\n/);
+      const lineNumbers = lines.map((_, i) => i + 1).join('\n');
+      const langLabel = (ext || 'TEXT').toUpperCase();
+      const truncNote = data.truncated
+        ? `<span style="color:#f59e0b;font-weight:600">· Đang hiển thị 512 KB đầu tiên</span>`
+        : '';
+      bodyEl.innerHTML = `
+        <div class="office-toolbar" style="background:#181825;color:#a6adc8;border-bottom-color:#313244">
+          <div class="office-toolbar-group">
+            <span style="background:#313244;color:#89b4fa;padding:2px 8px;border-radius:4px;font-weight:700;font-family:monospace">${escHtml(langLabel)}</span>
+            <span>${lines.length} dòng · ${content.length.toLocaleString()} ký tự ${truncNote}</span>
+          </div>
+          <div class="office-toolbar-group">
+            <button type="button" class="office-tool-btn" style="background:#313244;color:#cdd6f4;border-color:#45475a" onclick="toggleCodePreviewWrap()">⇄ Tự động xuống dòng</button>
+          </div>
+        </div>
+        <div class="file-preview-code-wrap">
+          <pre class="file-preview-lines">${lineNumbers}</pre>
+          <pre class="file-preview-code" id="file-preview-code-block">${highlightCodeSyntax(content, ext)}</pre>
+        </div>`;
+      return;
+    }
+
+    // Định dạng nhị phân cũ (.doc, .xls nhị phân đời 97-2003 hoặc .exe)
+    bodyEl.innerHTML = `<div style="margin:auto;padding:40px;text-align:center;color:#1e293b;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.08);max-width:480px">
+      <div style="margin-bottom:14px;display:inline-block">${fileTypeIcon(mimeType, filename)}</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px">${escHtml(filename)}</div>
+      <div style="font-size:13px;color:#64748b;margin-bottom:18px;line-height:1.5">Định dạng tệp nhị phân này không hỗ trợ giải mã trực tiếp trên trình duyệt. Bạn có thể mở hoặc tải tệp xuống bên dưới.</div>
+      <a class="btn-primary" href="${url}" download="${escHtml(filename)}" style="text-decoration:none;display:inline-block" onclick="markFileDownloaded('${escHtml(fileId)}')">Tải tệp xuống máy</a>
+    </div>`;
+  } catch (err) {
+    bodyEl.innerHTML = `<div style="margin:auto;padding:32px;color:#ef4444;text-align:center;font-weight:600">Lỗi tải xem trước: ${escHtml(err.message || 'Không xác định')}</div>`;
+  }
+}
+
+// ─── Các hàm tương tác trên thanh công cụ Word / Excel / PowerPoint / Code ───
+function setWordPreviewZoom(scale) {
+  const page = $('word-preview-page');
+  if (!page) return;
+  page.style.transform = `scale(${scale})`;
+  page.style.marginBottom = scale > 1 ? `${Math.round((scale - 1) * page.offsetHeight)}px` : '0px';
+}
+
+function printWordPreview() {
+  const page = $('word-preview-page');
+  if (!page) return;
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) return;
+  win.document.write(`<!DOCTYPE html><html><head><title>In tài liệu</title><style>
+    body{font-family:'Times New Roman',Calibri,serif;padding:40px 56px;color:#111827;line-height:1.65;font-size:15px}
+    table{width:100%;border-collapse:collapse;margin:12px 0}td,th{border:1px solid #94a3b8;padding:7px 10px}
+    h1{color:#1e3a8a}h2{color:#1e40af}h3{color:#1d4ed8}
+  </style></head><body>${page.innerHTML}</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+function toggleCodePreviewWrap() {
+  const codeEl = $('file-preview-code-block');
+  if (!codeEl) return;
+  const wrapped = codeEl.style.whiteSpace === 'pre-wrap';
+  codeEl.style.whiteSpace = wrapped ? 'pre' : 'pre-wrap';
+  codeEl.style.wordBreak = wrapped ? 'normal' : 'break-word';
+}
+
+function excelColName(index) {
+  let name = '';
+  let n = index;
+  while (n >= 0) {
+    name = String.fromCharCode((n % 26) + 65) + name;
+    n = Math.floor(n / 26) - 1;
+  }
+  return name;
+}
+
+function renderExcelPreviewWorkspace(bodyEl, sheetIdx = 0) {
+  const sheets = state.excelPreviewSheets || [];
+  if (!sheets.length) {
+    bodyEl.innerHTML = '<div style="margin:auto;padding:32px;color:#64748b">Bảng tính Excel trống</div>';
+    return;
+  }
+  const activeIdx = Math.max(0, Math.min(sheetIdx, sheets.length - 1));
+  const sheet = sheets[activeIdx];
+  const rows = sheet.rows || [];
+  const maxCols = Math.max(8, sheet.maxCols || 0, ...rows.map(r => r.length));
+  const totalRows = Math.max(20, rows.length);
+
+  // Cập nhật nội dung sao chép theo sheet đang mở
+  state.currentPreviewText = rows.map(r => r.join('\t')).join('\n');
+
+  let colHeadersHtml = '<th class="excel-corner-hdr"></th>';
+  for (let c = 0; c < maxCols; c++) {
+    colHeadersHtml += `<th class="excel-col-hdr">${excelColName(c)}</th>`;
+  }
+
+  let bodyRowsHtml = '';
+  for (let r = 0; r < totalRows; r++) {
+    const rowData = rows[r] || [];
+    let cellsHtml = `<th class="excel-row-hdr">${r + 1}</th>`;
+    for (let c = 0; c < maxCols; c++) {
+      const val = rowData[c] != null ? String(rowData[c]) : '';
+      const cellRef = `${excelColName(c)}${r + 1}`;
+      const isNum = val !== '' && !isNaN(Number(val));
+      const alignStyle = isNum ? ' style="text-align:right;color:#0369a1"' : '';
+      cellsHtml += `<td data-ref="${cellRef}" data-val="${escHtml(val)}"${alignStyle} onclick="selectExcelPreviewCell(this)">${escHtml(val)}</td>`;
+    }
+    bodyRowsHtml += `<tr>${cellsHtml}</tr>`;
+  }
+
+  const tabsHtml = sheets.map((s, idx) => `
+    <button type="button" class="excel-sheet-tab${idx === activeIdx ? ' active' : ''}" onclick="switchExcelPreviewSheet(${idx})">
+      📊 ${escHtml(s.name || ('Sheet' + (idx + 1)))}
+    </button>
+  `).join('');
+
+  const firstVal = (rows[0] && rows[0][0] != null) ? String(rows[0][0]) : '';
+
+  bodyEl.innerHTML = `
+    <div class="excel-formula-bar">
+      <div class="excel-cell-ref" id="excel-cell-ref">A1</div>
+      <div class="excel-fx-lbl">fx</div>
+      <div class="excel-formula-val" id="excel-formula-val">${escHtml(firstVal)}</div>
+      <div style="font-size:12px;color:#64748b;padding:0 6px">${rows.length} hàng × ${ sheet.maxCols || maxCols } cột</div>
+    </div>
+    <div class="excel-grid-container">
+      <table class="excel-sheet-table">
+        <thead><tr>${colHeadersHtml}</tr></thead>
+        <tbody>${bodyRowsHtml}</tbody>
+      </table>
+    </div>
+    <div class="excel-sheet-tabs">${tabsHtml}</div>`;
+}
+
+function switchExcelPreviewSheet(idx) {
+  const bodyEl = $('file-preview-body');
+  if (bodyEl) renderExcelPreviewWorkspace(bodyEl, idx);
+}
+
+function selectExcelPreviewCell(td) {
+  if (!td) return;
+  document.querySelectorAll('.excel-sheet-table td.selected-cell').forEach(el => el.classList.remove('selected-cell'));
+  td.classList.add('selected-cell');
+  const refEl = $('excel-cell-ref');
+  const valEl = $('excel-formula-val');
+  if (refEl) refEl.textContent = td.getAttribute('data-ref') || 'A1';
+  if (valEl) valEl.textContent = td.getAttribute('data-val') || '';
+}
+
+function renderPptPreviewWorkspace(bodyEl, slideIdx = 0) {
+  const slides = state.pptPreviewSlides || [];
+  if (!slides.length) {
+    bodyEl.innerHTML = '<div style="margin:auto;padding:32px;color:#e5e5e5">Bản trình chiếu PowerPoint trống</div>';
+    return;
+  }
+  const activeIdx = Math.max(0, Math.min(slideIdx, slides.length - 1));
+  const current = slides[activeIdx];
+
+  const thumbsHtml = slides.map((s, i) => `
+    <div class="ppt-thumb${i === activeIdx ? ' active' : ''}" onclick="selectPptPreviewSlide(${i})">
+      <div class="ppt-thumb-num">Slide ${i + 1}</div>
+      <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(s.title || '(Không tiêu đề)')}</div>
+    </div>
+  `).join('');
+
+  const bulletsHtml = (current.lines || []).map(line => `<p>• ${escHtml(line)}</p>`).join('') || '<p style="color:#94a3b8">(Slide không có văn bản)</p>';
+
+  bodyEl.innerHTML = `
+    <div class="office-toolbar" style="background:#1f1f1f;color:#e5e5e5;border-bottom-color:#383838">
+      <div class="office-toolbar-group">
+        <span>📽️ <b>Slide ${activeIdx + 1} / ${slides.length}</b></span>
+      </div>
+      <div class="office-toolbar-group">
+        <button type="button" class="office-tool-btn" style="background:#2d2d2d;color:#fff;border-color:#444" ${activeIdx <= 0 ? 'disabled' : ''} onclick="selectPptPreviewSlide(${activeIdx - 1})">◀ Slide trước</button>
+        <button type="button" class="office-tool-btn" style="background:#2d2d2d;color:#fff;border-color:#444" ${activeIdx >= slides.length - 1 ? 'disabled' : ''} onclick="selectPptPreviewSlide(${activeIdx + 1})">Slide tiếp ▶</button>
+      </div>
+    </div>
+    <div class="ppt-workspace">
+      <div class="ppt-sidebar">${thumbsHtml}</div>
+      <div class="ppt-stage">
+        <div class="ppt-slide-card">
+          ${current.title ? `<h2>${escHtml(current.title)}</h2>` : ''}
+          ${bulletsHtml}
+        </div>
+      </div>
+    </div>`;
+}
+
+function selectPptPreviewSlide(idx) {
+  const bodyEl = $('file-preview-body');
+  if (bodyEl) renderPptPreviewWorkspace(bodyEl, idx);
+}
+
+function highlightCodeSyntax(text, ext) {
+  let safe = escHtml(text);
+  const codeExts = new Set(['java','js','jsx','ts','tsx','py','c','cpp','h','hpp','cs','go','rs','php','rb','kt','swift','sql','json','xml','html','css']);
+  if (!codeExts.has(ext)) return safe;
+  // Tô màu chú thích, chuỗi, từ khóa và annotation
+  safe = safe.replace(/(\/\/[^\n]*|#[^\n]*)/g, '<span class="tok-com">$1</span>');
+  safe = safe.replace(/(@[A-Za-z_][A-Za-z0-9_]*)/g, '<span class="tok-ann">$1</span>');
+  safe = safe.replace(/\b(public|private|protected|class|interface|enum|extends|implements|static|final|void|int|long|double|float|boolean|char|byte|String|var|let|const|function|async|await|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|throws|new|this|super|import|package|from|export|default|null|true|false|SELECT|FROM|WHERE|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|JOIN|LEFT|RIGHT|INNER|ORDER|BY|GROUP|LIMIT)\b/g, '<span class="tok-kw">$1</span>');
+  return safe;
+}
+
+function formatBytesHuman(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  const kb = bytes / 1024;
+  if (kb < 1024) return kb.toFixed(1) + ' KB';
+  return (kb / 1024).toFixed(1) + ' MB';
+}
+
+// ─── Bộ giải nén ZIP / Office OpenXML (.docx, .xlsx, .pptx) ngay trên trình duyệt ───
+async function openZipArchiveClientSide(buffer) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  const decoder = new TextDecoder('utf-8');
+  const entryRecords = [];
+
+  // Ưu tiên đọc Central Directory ở cuối file ZIP để luôn lấy đúng compSize (kể cả khi file Office bật cờ Data Descriptor bit 3)
+  let eocdOffset = -1;
+  if (bytes.length >= 22) {
+    const minSearch = Math.max(0, bytes.length - 65557);
+    for (let i = bytes.length - 22; i >= minSearch; i--) {
+      if (view.getUint32(i, true) === 0x06054b50) { eocdOffset = i; break; }
+    }
+  }
+
+  if (eocdOffset !== -1) {
+    const cdCount = view.getUint16(eocdOffset + 10, true);
+    let cdPos = view.getUint32(eocdOffset + 16, true);
+    for (let i = 0; i < cdCount && cdPos + 46 <= bytes.length; i++) {
+      if (view.getUint32(cdPos, true) !== 0x02014b50) break;
+      const method = view.getUint16(cdPos + 10, true);
+      const compSize = view.getUint32(cdPos + 20, true);
+      const uncompSize = view.getUint32(cdPos + 24, true);
+      const nameLen = view.getUint16(cdPos + 28, true);
+      const extraLen = view.getUint16(cdPos + 30, true);
+      const commentLen = view.getUint16(cdPos + 32, true);
+      const localHdrOffset = view.getUint32(cdPos + 42, true);
+      const name = decoder.decode(bytes.subarray(cdPos + 46, cdPos + 46 + nameLen));
+      const isDir = name.endsWith('/');
+      let dataStart = -1;
+      if (localHdrOffset + 30 <= bytes.length) {
+        const lNameLen = view.getUint16(localHdrOffset + 26, true);
+        const lExtraLen = view.getUint16(localHdrOffset + 28, true);
+        dataStart = localHdrOffset + 30 + lNameLen + lExtraLen;
+      }
+      entryRecords.push({ name, dir: isDir, size: isDir ? '' : formatBytesHuman(uncompSize), method, compSize, uncompSize, dataStart });
+      cdPos += 46 + nameLen + extraLen + commentLen;
+    }
+  } else {
+    // Fallback quét Local File Header từ đầu file
+    let offset = 0;
+    while (offset + 30 <= bytes.length) {
+      if (view.getUint32(offset, true) !== 0x04034b50) break;
+      const flags = view.getUint16(offset + 6, true);
+      const method = view.getUint16(offset + 8, true);
+      const compSize = view.getUint32(offset + 18, true);
+      const uncompSize = view.getUint32(offset + 22, true);
+      const nameLen = view.getUint16(offset + 26, true);
+      const extraLen = view.getUint16(offset + 28, true);
+      const name = decoder.decode(bytes.subarray(offset + 30, offset + 30 + nameLen));
+      const dataStart = offset + 30 + nameLen + extraLen;
+      if ((flags & 8) !== 0 && compSize === 0) break;
+      const isDir = name.endsWith('/');
+      entryRecords.push({ name, dir: isDir, size: isDir ? '' : formatBytesHuman(uncompSize), method, compSize, uncompSize, dataStart });
+      offset = dataStart + compSize;
+    }
+  }
+
+  async function readEntryText(entryName) {
+    const rec = entryRecords.find(r => r.name === entryName);
+    if (!rec || rec.dataStart < 0 || rec.dataStart + rec.compSize > bytes.length) return null;
+    const rawSlice = bytes.subarray(rec.dataStart, rec.dataStart + rec.compSize);
+    if (rec.method === 0) {
+      return decoder.decode(rawSlice);
+    }
+    if (rec.method === 8 && typeof DecompressionStream !== 'undefined') {
+      const ds = new DecompressionStream('deflate-raw');
+      const writer = ds.writable.getWriter();
+      writer.write(rawSlice);
+      writer.close();
+      const decompBuf = await new Response(ds.readable).arrayBuffer();
+      return decoder.decode(new Uint8Array(decompBuf));
+    }
+    return null;
+  }
+
+  return { entries: entryRecords, readEntryText };
+}
+
+// ─── Chuyển đổi XML của Word (word/document.xml) sang trang HTML có định dạng ───
+function parseDocxXmlToHtml(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  const body = doc.getElementsByTagName('w:body')[0] || doc.documentElement;
+  const plainLines = [];
+  let paraCount = 0;
+
+  function renderParagraph(pNode) {
+    let align = '';
+    let headingTag = 'p';
+    const pPr = pNode.getElementsByTagName('w:pPr')[0];
+    if (pPr) {
+      const jc = pPr.getElementsByTagName('w:jc')[0];
+      if (jc) {
+        const val = jc.getAttribute('w:val') || '';
+        if (val === 'center') align = 'text-align:center;';
+        else if (val === 'right' || val === 'end') align = 'text-align:right;';
+        else if (val === 'both') align = 'text-align:justify;';
+      }
+      const pStyle = pPr.getElementsByTagName('w:pStyle')[0];
+      if (pStyle) {
+        const sVal = (pStyle.getAttribute('w:val') || '').toLowerCase();
+        if (sVal.includes('heading1') || sVal === '1' || sVal.includes('title')) headingTag = 'h1';
+        else if (sVal.includes('heading2') || sVal === '2') headingTag = 'h2';
+        else if (sVal.includes('heading3') || sVal === '3') headingTag = 'h3';
+      }
+    }
+
+    let paraHtml = '';
+    let paraPlain = '';
+    const runs = pNode.getElementsByTagName('w:r');
+    for (let i = 0; i < runs.length; i++) {
+      const r = runs[i];
+      const rPr = r.getElementsByTagName('w:rPr')[0];
+      const isBold = rPr && rPr.getElementsByTagName('w:b').length > 0;
+      const isItalic = rPr && rPr.getElementsByTagName('w:i').length > 0;
+      const isUnderline = rPr && rPr.getElementsByTagName('w:u').length > 0;
+      const colorEl = rPr ? rPr.getElementsByTagName('w:color')[0] : null;
+      const hexColor = colorEl ? colorEl.getAttribute('w:val') : null;
+
+      let runText = '';
+      for (let c = r.firstChild; c; c = c.nextSibling) {
+        if (c.nodeName === 'w:t') runText += c.textContent || '';
+        else if (c.nodeName === 'w:tab') runText += '\t';
+        else if (c.nodeName === 'w:br') runText += '\n';
+      }
+      if (!runText) continue;
+      paraPlain += runText;
+      let chunk = escHtml(runText).replace(/\n/g, '<br>').replace(/\t/g, '&emsp;');
+      if (isBold) chunk = `<b>${chunk}</b>`;
+      if (isItalic) chunk = `<i>${chunk}</i>`;
+      if (isUnderline) chunk = `<u>${chunk}</u>`;
+      if (hexColor && hexColor !== 'auto' && /^[0-9A-Fa-f]{6}$/.test(hexColor)) {
+        chunk = `<span style="color:#${hexColor}">${chunk}</span>`;
+      }
+      paraHtml += chunk;
+    }
+    if (!paraPlain.trim()) {
+      return '';
+    }
+    paraCount++;
+    plainLines.push(paraPlain);
+    const styleAttr = align ? ` style="${align}"` : '';
+    return `<${headingTag}${styleAttr}>${paraHtml}</${headingTag}>`;
+  }
+
+  function renderTable(tblNode) {
+    let rowsHtml = '';
+    const trList = tblNode.getElementsByTagName('w:tr');
+    for (let r = 0; r < trList.length; r++) {
+      const tr = trList[r];
+      let cellsHtml = '';
+      const rowPlain = [];
+      for (let c = tr.firstChild; c; c = c.nextSibling) {
+        if (c.nodeName === 'w:tc') {
+          const pNodes = c.getElementsByTagName('w:p');
+          let cellHtml = '';
+          const cellTexts = [];
+          for (let p = 0; p < pNodes.length; p++) {
+            cellHtml += renderParagraph(pNodes[p]);
+            cellTexts.push(pNodes[p].textContent || '');
+          }
+          rowPlain.push(cellTexts.join(' ').trim());
+          cellsHtml += `<td>${cellHtml}</td>`;
+        }
+      }
+      if (rowPlain.length) plainLines.push(rowPlain.join('\t'));
+      rowsHtml += `<tr>${cellsHtml}</tr>`;
+    }
+    return `<table><tbody>${rowsHtml}</tbody></table>`;
+  }
+
+  let htmlParts = [];
+  for (let node = body.firstChild; node; node = node.nextSibling) {
+    if (node.nodeName === 'w:p') {
+      const pHtml = renderParagraph(node);
+      if (pHtml) htmlParts.push(pHtml);
+    } else if (node.nodeName === 'w:tbl') {
+      htmlParts.push(renderTable(node));
+    }
+  }
+
+  // Nếu XML không dùng prefix w: chuẩn thì fallback lấy toàn bộ đoạn văn
+  if (htmlParts.length === 0) {
+    const allP = doc.getElementsByTagName('w:p');
+    for (let i = 0; i < allP.length; i++) {
+      const pHtml = renderParagraph(allP[i]);
+      if (pHtml) htmlParts.push(pHtml);
+    }
+  }
+
+  return {
+    html: htmlParts.join(''),
+    plainText: plainLines.join('\n'),
+    paraCount: Math.max(1, paraCount),
+  };
+}
+
+// ─── Giải mã bảng tính Excel (.xlsx) sang danh sách các Sheet 2 chiều ───
+function excelColLettersToIndex(letters) {
+  let col = 0;
+  for (let i = 0; i < letters.length; i++) {
+    col = col * 26 + (letters.charCodeAt(i) - 64);
+  }
+  return col - 1;
+}
+
+async function parseXlsxArchive(zip) {
+  // 1. Đọc bảng chuỗi dùng chung xl/sharedStrings.xml
+  const sharedStrings = [];
+  const ssXml = await zip.readEntryText('xl/sharedStrings.xml');
+  if (ssXml) {
+    const ssDoc = new DOMParser().parseFromString(ssXml, 'application/xml');
+    const siNodes = ssDoc.getElementsByTagName('si');
+    for (let i = 0; i < siNodes.length; i++) {
+      const tNodes = siNodes[i].getElementsByTagName('t');
+      let s = '';
+      for (let j = 0; j < tNodes.length; j++) s += tNodes[j].textContent || '';
+      sharedStrings.push(s);
+    }
+  }
+
+  // 2. Đọc tên các Sheet từ xl/workbook.xml
+  const sheetNames = [];
+  const wbXml = await zip.readEntryText('xl/workbook.xml');
+  if (wbXml) {
+    const wbDoc = new DOMParser().parseFromString(wbXml, 'application/xml');
+    const sNodes = wbDoc.getElementsByTagName('sheet');
+    for (let i = 0; i < sNodes.length; i++) {
+      sheetNames.push(sNodes[i].getAttribute('name') || `Sheet${i + 1}`);
+    }
+  }
+
+  // 3. Tìm tất cả các file xl/worksheets/sheet*.xml
+  const sheetEntries = zip.entries
+    .filter(e => /^xl\/worksheets\/sheet\d+\.xml$/i.test(e.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+  const sheets = [];
+  for (let idx = 0; idx < sheetEntries.length; idx++) {
+    const xml = await zip.readEntryText(sheetEntries[idx].name);
+    if (!xml) continue;
+    const sDoc = new DOMParser().parseFromString(xml, 'application/xml');
+    const rowNodes = sDoc.getElementsByTagName('row');
+    const rows = [];
+    let maxCols = 0;
+
+    for (let r = 0; r < Math.min(rowNodes.length, 300); r++) {
+      const rowEl = rowNodes[r];
+      const rAttr = parseInt(rowEl.getAttribute('r') || String(r + 1), 10);
+      const rowIndex = Math.max(0, Math.min(299, (isNaN(rAttr) ? r + 1 : rAttr) - 1));
+      while (rows.length <= rowIndex) rows.push([]);
+      const currentRow = rows[rowIndex];
+
+      const cells = rowEl.getElementsByTagName('c');
+      for (let c = 0; c < cells.length; c++) {
+        const cell = cells[c];
+        const ref = cell.getAttribute('r') || '';
+        const match = ref.match(/^([A-Z]+)/i);
+        const colIdx = match ? excelColLettersToIndex(match[1].toUpperCase()) : c;
+        const type = cell.getAttribute('t') || '';
+        let val = '';
+
+        if (type === 'inlineStr') {
+          const tNodes = cell.getElementsByTagName('t');
+          for (let j = 0; j < tNodes.length; j++) val += tNodes[j].textContent || '';
+        } else {
+          const vNode = cell.getElementsByTagName('v')[0];
+          const rawVal = vNode ? (vNode.textContent || '') : '';
+          if (type === 's') {
+            const sIdx = parseInt(rawVal, 10);
+            val = (!isNaN(sIdx) && sharedStrings[sIdx] != null) ? sharedStrings[sIdx] : rawVal;
+          } else if (type === 'b') {
+            val = rawVal === '1' ? 'TRUE' : 'FALSE';
+          } else {
+            val = rawVal;
+          }
+        }
+
+        while (currentRow.length <= colIdx) currentRow.push('');
+        currentRow[colIdx] = val;
+        if (colIdx + 1 > maxCols) maxCols = colIdx + 1;
+      }
+    }
+    sheets.push({
+      name: sheetNames[idx] || `Sheet${idx + 1}`,
+      rows,
+      maxCols,
+    });
+  }
+
+  const plainText = sheets[0] ? sheets[0].rows.map(r => r.join('\t')).join('\n') : '';
+  return { mode: 'excel', sheets, plainText };
+}
+
+// ─── Giải mã bản trình chiếu PowerPoint (.pptx) sang danh sách các Slide ───
+async function parsePptxArchive(zip) {
+  const slideEntries = zip.entries
+    .filter(e => /^ppt\/slides\/slide\d+\.xml$/i.test(e.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+  const slides = [];
+  const allText = [];
+
+  for (let i = 0; i < slideEntries.length; i++) {
+    const xml = await zip.readEntryText(slideEntries[i].name);
+    if (!xml) continue;
+    const sDoc = new DOMParser().parseFromString(xml, 'application/xml');
+    const pNodes = sDoc.getElementsByTagName('a:p');
+    const paragraphs = [];
+
+    for (let p = 0; p < pNodes.length; p++) {
+      const tNodes = pNodes[p].getElementsByTagName('a:t');
+      let line = '';
+      for (let t = 0; t < tNodes.length; t++) line += tNodes[t].textContent || '';
+      if (line.trim()) paragraphs.push(line.trim());
+    }
+
+    const title = paragraphs[0] || `Slide ${i + 1}`;
+    const lines = paragraphs.slice(1);
+    slides.push({ title, lines });
+    allText.push(`--- Slide ${i + 1}: ${title} ---\n${lines.join('\n')}`);
+  }
+
+  return { mode: 'ppt', slides, plainText: allText.join('\n\n') };
+}
+
+async function parseFilePreviewClientSide(url, filename, ext, mime) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Không tìm thấy tệp trên máy chủ (' + res.status + ')');
+  const buf = await res.arrayBuffer();
+
+  // 1. Tệp Microsoft Word (.docx)
+  if (ext === 'docx') {
+    const zip = await openZipArchiveClientSide(buf);
+    const docXml = await zip.readEntryText('word/document.xml');
+    if (docXml !== null) {
+      const parsed = parseDocxXmlToHtml(docXml);
+      return { mode: 'word', filename, ...parsed };
+    }
+  }
+
+  // 2. Tệp Microsoft Excel (.xlsx)
+  if (ext === 'xlsx') {
+    const zip = await openZipArchiveClientSide(buf);
+    return await parseXlsxArchive(zip);
+  }
+
+  // 3. Tệp Microsoft PowerPoint (.pptx)
+  if (ext === 'pptx') {
+    const zip = await openZipArchiveClientSide(buf);
+    return await parsePptxArchive(zip);
+  }
+
+  // 4. Tệp bảng tính CSV / TSV -> mở bằng công cụ Microsoft Excel Grid
+  if (ext === 'csv' || ext === 'tsv') {
+    const text = new TextDecoder('utf-8').decode(new Uint8Array(buf));
+    const sep = ext === 'tsv' ? '\t' : ',';
+    const rawLines = text.split(/\r?\n/).filter(l => l.trim().length > 0).slice(0, 300);
+    let maxCols = 0;
+    const rows = rawLines.map(line => {
+      const cols = line.split(sep).map(c => c.replace(/^"|"$/g, ''));
+      if (cols.length > maxCols) maxCols = cols.length;
+      return cols;
+    });
+    return {
+      mode: 'excel',
+      sheets: [{ name: filename || 'Sheet1', rows, maxCols }],
+      plainText: text,
+    };
+  }
+
+  // 5. Tệp gói nén ZIP
+  if (ext === 'zip') {
+    const zip = await openZipArchiveClientSide(buf);
+    return { mode: 'zip', filename, entries: zip.entries };
+  }
+
+  // 6. Các tệp Mã nguồn / Văn bản (.java, .js, .py, .json, .sql, .txt, .md, .html, .css...)
+  const maxBytes = 512 * 1024;
+  const truncated = buf.byteLength > maxBytes;
+  const bytes = new Uint8Array(truncated ? buf.slice(0, maxBytes) : buf);
+
+  let nullBytes = 0;
+  const sampleLen = Math.min(bytes.length, 4096);
+  for (let i = 0; i < sampleLen; i++) {
+    if (bytes[i] === 0) nullBytes++;
+  }
+  const textExts = new Set([
+    'txt','md','log','csv','tsv','json','xml','yaml','yml','properties','ini','conf','env',
+    'java','js','jsx','ts','tsx','py','c','cpp','h','hpp','cs','go','rs','php','rb','kt','swift',
+    'html','htm','css','scss','sql','sh','bat','ps1','gradle','gitignore'
+  ]);
+  if (!textExts.has(ext) && nullBytes > 2) {
+    return { mode: 'unsupported', filename, mimeType: mime };
+  }
+  const text = new TextDecoder('utf-8').decode(bytes);
+  return {
+    mode: 'text',
+    ext,
+    filename,
+    truncated,
+    content: text,
+  };
+}
+
+function closeFilePreviewModal() {
+  $('file-preview-modal-overlay')?.classList.remove('visible');
+  const bodyEl = $('file-preview-body');
+  if (bodyEl) bodyEl.innerHTML = '';
+  state.currentPreviewText = '';
+  releasePreviewBlobUrl();
+}
+
+async function copyFilePreviewContent() {
+  if (!state.currentPreviewText) return;
+  try {
+    await navigator.clipboard.writeText(state.currentPreviewText);
+    showToast('Đã sao chép nội dung tệp vào bộ nhớ tạm!', 'success');
+  } catch (_) {
+    showToast('Không thể sao chép nội dung.', 'error');
+  }
 }
 
 // ─── Audio player controls ────────────────────────────────────────────────────
@@ -1630,31 +3647,109 @@ function stepMsgSearch(delta) {
 }
 
 // ─── URL rendering ────────────────────────────────────────────────────────────
+function escapeRegex(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function renderPlainWithMentions(segment) {
+  const escaped = escHtml(segment);
+  const conv = state.conversations.get(state.currentConvId);
+  const members = conv?.type === 'group'
+    ? [...new Set([...(state.groups.get(state.currentConvId.replace('group:', ''))?.members || []), ...conv.messages.map(m => m.from).filter(Boolean)])]
+    : [];
+  const namedAlternation = members.filter(Boolean).sort((a, b) => b.length - a.length).map(u => escapeRegex(escHtml(u))).join('|');
+  const mentionPat = namedAlternation
+    ? new RegExp(`(^|[\\s(\\[])(@(?:${namedAlternation}|[\\p{L}\\p{N}_.-]{1,32}))`, 'giu')
+    : /(^|[\s(\[])(@[\p{L}\p{N}_.-]{1,32})/gu;
+  return escaped.replace(mentionPat, '$1<span class="msg-mention">$2</span>');
+}
+
 function renderMessageText(value) {
   const text = String(value || '');
   const urlPat = /((https?:\/\/|www\.)[^\s<]+)/gi;
   let html = '', last = 0;
   for (const match of text.matchAll(urlPat)) {
     const raw = match[0], start = match.index;
-    html += escHtml(text.slice(last, start));
+    html += renderPlainWithMentions(text.slice(last, start));
     const clean = raw.replace(/[),.!?;:]+$/, '');
     const suffix = raw.slice(clean.length);
     const href = clean.startsWith('www.') ? `https://${clean}` : clean;
     html += `<a class="message-link" href="${escHtml(href)}" target="_blank" rel="noopener noreferrer">${escHtml(clean)}</a>${escHtml(suffix)}`;
     last = start + raw.length;
   }
-  html += escHtml(text.slice(last));
+  html += renderPlainWithMentions(text.slice(last));
   return html.replace(/\n/g, '<br>');
+}
+
+function closeMentionBox() {
+  const box = $('mention-suggest-box');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+}
+
+function selectMentionCandidate(username) {
+  const input = dom.messageInput;
+  if (!input || !username) return;
+  const pos = input.selectionStart ?? input.value.length;
+  const before = input.value.slice(0, pos);
+  const after = input.value.slice(pos);
+  const replaced = before.replace(/(^|\s)@([^\s@]*)$/, `$1@${username} `);
+  input.value = replaced + after;
+  const nextCaret = replaced.length;
+  input.setSelectionRange(nextCaret, nextCaret);
+  closeMentionBox();
+  autoResize(input);
+  updateComposerActionBtn();
+  input.focus();
+}
+
+function handleMentionAutocomplete() {
+  const box = $('mention-suggest-box');
+  const input = dom.messageInput;
+  if (!box || !input || !state.currentConvId?.startsWith('group:')) {
+    closeMentionBox();
+    return;
+  }
+  const pos = input.selectionStart ?? input.value.length;
+  const before = input.value.slice(0, pos);
+  const m = before.match(/(?:^|\s)@([^\s@]*)$/);
+  if (!m) { closeMentionBox(); return; }
+  const q = m[1].toLowerCase();
+  const gid = state.currentConvId.replace('group:', '');
+  const members = (state.groups.get(gid)?.members || []).filter(u => u && u !== state.username && u.toLowerCase().includes(q));
+  if (!members.length) { closeMentionBox(); return; }
+  box.innerHTML = members.slice(0, 8).map(u => `
+    <button type="button" class="zalo-mention-opt" onmousedown="event.preventDefault();selectMentionCandidate('${escHtml(u)}')">
+      <div class="conv-avatar" style="width:26px;height:26px;font-size:11px;flex-shrink:0">${userAvatarInner(u)}</div>
+      <span>${escHtml(u)}</span>
+    </button>
+  `).join('');
+  box.style.display = 'block';
 }
 
 // ─── Send message ─────────────────────────────────────────────────────────────
 function sendMessage() {
-  let content = dom.messageInput.value.trim();
-  if (!content || !state.currentConvId) return;
-  const replyMeta=state.replyTo?{replyToId:state.replyTo.messageId,replyToUsername:state.replyTo.from,replyToContent:String(state.replyTo.content||state.replyTo.filename||'Tệp đính kèm').slice(0,180)}:{};
-  state.replyTo=null; $('reply-preview')?.remove();
+  if (!state.currentConvId) return;
+  if (dom.messageInput?.disabled) {
+    showToast('Trưởng nhóm đã tạm khóa quyền gửi tin nhắn.', 'error');
+    return;
+  }
+  const raw = dom.messageInput.value.trim();
+  const mentionPrefix = state.replyMention ? `@${state.replyMention}` : '';
+  if (!raw && !mentionPrefix) return;
+  let content = raw;
+  if (mentionPrefix && !raw.toLowerCase().startsWith(mentionPrefix.toLowerCase())) {
+    content = raw ? `${mentionPrefix} ${raw}` : mentionPrefix;
+  }
+  const replyMeta = state.replyTo ? {
+    replyToId: state.replyTo.messageId,
+    replyToUsername: state.replyTo.from,
+    replyToContent: String(summarizeReplyTarget(state.replyTo) || 'Tệp đính kèm').slice(0, 180)
+  } : {};
+  clearReply();
+  closeMentionBox();
   dom.messageInput.value = '';
   dom.messageInput.style.height = '';
+  updateComposerActionBtn();
   closeEmojiPicker();
 
   const conv = state.conversations.get(state.currentConvId);
@@ -1666,6 +3761,20 @@ function sendMessage() {
     const groupId = state.currentConvId.replace('group:', '');
     wsSend({ type: 'group_message', groupId, content, ...replyMeta });
   }
+}
+
+function updateComposerActionBtn() {
+  const hasText = Boolean(dom.messageInput?.value.trim() || state.replyMention);
+  if ($('quick-like-btn')) $('quick-like-btn').style.display = hasText ? 'none' : 'inline-flex';
+  if (dom.sendBtn) dom.sendBtn.style.display = hasText ? 'flex' : 'none';
+}
+
+function sendQuickLike() {
+  if (!state.currentConvId || dom.messageInput?.disabled) return;
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv) return;
+  if (conv.type === 'dm') wsSend({ type: 'private_message', to: conv.name, content: '👍' });
+  else if (conv.type === 'group') wsSend({ type: 'group_message', groupId: state.currentConvId.replace('group:', ''), content: '👍' });
 }
 
 // ─── File upload ──────────────────────────────────────────────────────────────
@@ -1831,8 +3940,28 @@ function toggleEmojiPicker() {
 function closeEmojiPicker() { dom.emojiPicker.classList.remove('visible'); }
 
 // ─── Right panel ──────────────────────────────────────────────────────────────
+function toggleUserMenu(event) {
+  event?.stopPropagation();
+  const pop = $('user-menu-popover');
+  if (!pop) return;
+  const open = pop.style.display === 'block';
+  if (open) { closeUserMenu(); return; }
+  pop.innerHTML = `
+    <div class="zalo-upop-name">${escHtml(state.username || 'Tài khoản')}</div>
+    <button type="button" class="zalo-upop-item" onclick="closeUserMenu();openProfilePage()"><span>Hồ sơ của bạn</span></button>
+    <button type="button" class="zalo-upop-item" onclick="closeUserMenu();openSettingsModal()"><span>Cài đặt</span></button>
+    <div class="zalo-upop-sep"></div>
+    <button type="button" class="zalo-upop-item danger" onclick="closeUserMenu();logout()"><span>Đăng xuất</span></button>`;
+  pop.style.display = 'block';
+}
+function closeUserMenu() {
+  const pop = $('user-menu-popover');
+  if (pop) pop.style.display = 'none';
+}
+
 function toggleRightPanel() {
   state.rightPanelOpen = !state.rightPanelOpen;
+  if (!state.rightPanelOpen) state.rightPanelView = 'info';
   dom.rightPanel.classList.toggle('open', state.rightPanelOpen);
   $('shared-files-btn').classList.toggle('active-panel', state.rightPanelOpen);
   if (state.rightPanelOpen) renderRightPanel();
@@ -1840,8 +3969,108 @@ function toggleRightPanel() {
 
 function closeRightPanel() {
   state.rightPanelOpen = false;
+  state.rightPanelView = 'info';
   dom.rightPanel.classList.remove('open');
   $('shared-files-btn').classList.remove('active-panel');
+}
+
+const GROUP_DEFAULT_SETTINGS = {
+  allowEditInfo: true,
+  allowPin: true,
+  allowNotes: true,
+  allowPolls: true,
+  allowSendMessage: true,
+  requireApproval: false,
+  highlightOwnerMsg: true,
+  allowNewMemberHistory: true,
+};
+
+function getGroupSettings(groupObj) {
+  return { ...GROUP_DEFAULT_SETTINGS, ...(groupObj?.settings || {}) };
+}
+
+function loadPinnedConversations(username) {
+  state.pinnedConversations.clear();
+  if (!username) return;
+  try {
+    const raw = JSON.parse(localStorage.getItem(`zchat_pinned_convs_${username}`) || '[]');
+    if (Array.isArray(raw)) raw.forEach(id => id && state.pinnedConversations.add(id));
+  } catch { /* ignore */ }
+}
+
+function togglePinConversation(convId) {
+  if (!convId || !state.username) return;
+  if (state.pinnedConversations.has(convId)) {
+    state.pinnedConversations.delete(convId);
+    showToast('Đã bỏ ghim hội thoại.', 'info');
+  } else {
+    state.pinnedConversations.add(convId);
+    showToast('Đã ghim hội thoại lên đầu.', 'success');
+  }
+  try {
+    localStorage.setItem(`zchat_pinned_convs_${state.username}`, JSON.stringify([...state.pinnedConversations]));
+  } catch { /* ignore */ }
+  renderConversationList();
+  if (state.rightPanelOpen) renderRightPanel();
+}
+
+function updateComposerPermissions() {
+  const inputBar = $('input-bar');
+  const conv = state.conversations.get(state.currentConvId);
+  if (!inputBar || !dom.messageInput) return;
+  if (conv?.type === 'group') {
+    const gid = conv.id.replace('group:', '');
+    const g = state.groups.get(gid);
+    const isOwner = Boolean(g && g.createdBy === state.username);
+    const allowSend = isOwner || getGroupSettings(g).allowSendMessage !== false;
+    inputBar.classList.toggle('composer-locked', !allowSend);
+    dom.messageInput.disabled = !allowSend;
+    dom.messageInput.placeholder = allowSend
+      ? `Nhập @, tin nhắn tới ${conv.name}`
+      : 'Trưởng nhóm đã tạm khóa quyền gửi tin nhắn';
+  } else {
+    inputBar.classList.remove('composer-locked');
+    dom.messageInput.disabled = false;
+    if (conv) dom.messageInput.placeholder = `Nhập @, tin nhắn tới ${conv.name}`;
+  }
+}
+
+function openRightPanelMembers() {
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv || conv.type !== 'group') return;
+  state.rightPanelView = 'members';
+  state.rightPanelOpen = true;
+  dom.rightPanel.classList.add('open');
+  $('shared-files-btn')?.classList.add('active-panel');
+  renderRightPanel();
+}
+
+function openRightPanelManage() {
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv || conv.type !== 'group') return;
+  state.rightPanelView = 'manage';
+  state.rightPanelOpen = true;
+  dom.rightPanel.classList.add('open');
+  $('shared-files-btn')?.classList.add('active-panel');
+  renderRightPanel();
+}
+
+function toggleGroupSetting(groupId, key, value) {
+  if (!groupId || !key) return;
+  const g = state.groups.get(groupId);
+  if (!g || g.createdBy !== state.username) {
+    showToast('Tính năng chỉ dành cho quản trị viên.', 'error');
+    if (state.rightPanelOpen) renderRightPanel();
+    return;
+  }
+  const next = Boolean(value);
+  g.settings = { ...getGroupSettings(g), [key]: next };
+  wsSend({ type: 'group_update_settings', groupId, settings: { [key]: next } });
+}
+
+function backToRightPanelInfo() {
+  state.rightPanelView = 'info';
+  renderRightPanel();
 }
 
 function switchRpTab(tab) {
@@ -1852,93 +4081,342 @@ function switchRpTab(tab) {
   renderRightPanel();
 }
 
+function renderRightPanelSummary(conv) {
+  const sumEl = $('rp-conv-summary');
+  if (!sumEl) return;
+  if (!conv) { sumEl.innerHTML = ''; return; }
+  const isGroup = conv.type === 'group';
+  const gid = isGroup ? conv.id.replace('group:', '') : '';
+  const g = isGroup ? state.groups.get(gid) : null;
+  const isOwner = Boolean(isGroup && g && g.createdBy === state.username);
+  const allowEditInfo = !isGroup || isOwner || getGroupSettings(g).allowEditInfo !== false;
+  const avHtml = isGroup ? groupAvatarInner(gid, conv.name) : userAvatarInner(conv.name);
+  const subText = isGroup ? '' : 'Trò chuyện riêng';
+  const muted = state.mutedConversations.has(conv.id);
+  const pinnedConv = state.pinnedConversations.has(conv.id);
+  sumEl.innerHTML = `
+    <div class="rp-sum-av">${avHtml}</div>
+    <div class="rp-sum-name-row">
+      <div class="rp-sum-name">${escHtml(conv.name)}</div>
+      ${isGroup && allowEditInfo ? `<button type="button" class="rp-sum-edit-btn" title="Đổi tên & ảnh đại diện nhóm" onclick="openGroupEditInfoModal()">${UI_ICONS.edit}</button>` : ''}
+    </div>
+    ${subText ? `<div class="rp-sum-sub">${escHtml(subText)}</div>` : ''}
+    <div class="rp-quick-actions">
+      <button type="button" class="rp-qa-btn${muted ? ' active' : ''}" onclick="toggleMuteConversation(${!muted});setTimeout(()=>renderRightPanel(),150)">
+        <span class="rp-qa-ico">${muted ? UI_ICONS.bell : UI_ICONS.bellOff}</span>
+        <span>${muted ? 'Bật thông báo' : 'Tắt thông báo'}</span>
+      </button>
+      <button type="button" class="rp-qa-btn${pinnedConv ? ' active' : ''}" onclick="togglePinConversation('${escHtml(conv.id)}')">
+        <span class="rp-qa-ico">${UI_ICONS.pin}</span>
+        <span>${pinnedConv ? 'Bỏ ghim hội thoại' : 'Ghim hội thoại'}</span>
+      </button>
+      ${isGroup ? `
+        <button type="button" class="rp-qa-btn" onclick="addGroupMember()">
+          <span class="rp-qa-ico">${UI_ICONS.userPlus}</span>
+          <span>Thêm thành viên</span>
+        </button>
+        <button type="button" class="rp-qa-btn" onclick="openRightPanelManage()">
+          <span class="rp-qa-ico">${UI_ICONS.settings}</span>
+          <span>Quản lý nhóm</span>
+        </button>
+      ` : `
+        <button type="button" class="rp-qa-btn" onclick="openGroupModal()">
+          <span class="rp-qa-ico">${UI_ICONS.users}</span>
+          <span>Tạo nhóm trò chuyện</span>
+        </button>
+      `}
+    </div>`;
+}
+
+function toggleRpSection(key) {
+  if (state.rpCollapsed.has(key)) state.rpCollapsed.delete(key);
+  else state.rpCollapsed.add(key);
+  document.querySelector(`.rp-section[data-sec="${key}"]`)?.classList.toggle('collapsed', state.rpCollapsed.has(key));
+}
+
+function toggleRpShowAll(key) {
+  state.rpShowAll[key] = !state.rpShowAll[key];
+  renderRightPanel();
+}
+
 function renderRightPanel() {
   const conv = state.conversations.get(state.currentConvId);
-  if (!conv) { dom.rpContent.innerHTML = '<div class="rp-empty">Chọn một cuộc trò chuyện</div>'; return; }
+  const isGroup = conv?.type === 'group';
+  const showMembersView = Boolean(isGroup && state.rightPanelView === 'members');
+  const showManageView = Boolean(isGroup && state.rightPanelView === 'manage');
+  const inSubView = showMembersView || showManageView;
+
+  if ($('rp-back-btn')) $('rp-back-btn').style.display = inSubView ? 'inline-flex' : 'none';
+  if ($('rp-header-title')) {
+    $('rp-header-title').textContent = showManageView
+      ? 'Quản lý nhóm'
+      : (showMembersView ? 'Thành viên' : (isGroup ? 'Thông tin nhóm' : 'Thông tin hội thoại'));
+  }
+  if ($('rp-conv-summary')) $('rp-conv-summary').style.display = inSubView ? 'none' : 'flex';
+
+  if (!conv) {
+    renderRightPanelSummary(null);
+    dom.rpContent.innerHTML = '<div class="rp-empty">Chọn một cuộc trò chuyện</div>';
+    return;
+  }
+
+  if (showMembersView) {
+    renderRightPanelMembersView(conv);
+    return;
+  }
+  if (showManageView) {
+    renderRightPanelManageView(conv);
+    return;
+  }
+
+  renderRightPanelSummary(conv);
 
   const msgs = conv.messages || [];
-  const tab = state.activeRpTab;
+  const gid = isGroup ? conv.id.replace('group:', '') : '';
+  const g = isGroup ? state.groups.get(gid) : null;
+  const isOwner = Boolean(isGroup && g && g.createdBy === state.username);
+  const other = conv.name;
+  const blocked = !isGroup && state.blockedUsers.has(other);
+  const chevSvg = '<svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>';
 
-  if (tab === 'images') {
-    const mediaList = msgs.filter(m => m.fileId && ((m.mimeType || '').startsWith('image/') || (m.mimeType || '').startsWith('video/')));
-    if (!mediaList.length) { dom.rpContent.innerHTML = '<div class="rp-empty">Chưa có ảnh hoặc video nào</div>'; return; }
-    dom.rpContent.innerHTML = `<div class="shared-img-grid">${mediaList.slice().reverse().map(m => {
-      const url = `/api/files/${encodeURIComponent(m.fileId)}`;
-      const isVideo = (m.mimeType || '').startsWith('video/');
-      const titleInfo = `${m.filename || (isVideo ? 'Video' : 'Ảnh')} · Người gửi: ${m.from || m.username || ''} · ${formatDateTimeFull(m.timestamp)}`;
-      if (isVideo) {
-        return `<div class="shared-media-item" title="${escHtml(titleInfo)}" onclick="openVideoViewer('${url}','${escHtml(m.filename||'video.mp4')}')">
-          <video src="${url}#t=0.1" preload="metadata" muted playsinline></video>
-          <div class="shared-video-badge"><span><svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg></span></div>
-        </div>`;
-      }
-      return `<div class="shared-media-item" title="${escHtml(titleInfo)}" onclick="openImageViewer('${url}','${escHtml(m.filename||'')}')">
-        <img class="shared-img-thumb" src="${url}" alt="${escHtml(m.filename||'')}" loading="lazy">
-      </div>`;
-    }).join('')}</div>`;
-  } else if (tab === 'files') {
-    const files = msgs.filter(m => m.fileId && !(m.mimeType || '').startsWith('image/') && !(m.mimeType || '').startsWith('video/') && !(m.mimeType || '').startsWith('audio/'));
-    const audios = msgs.filter(m => m.fileId && (m.mimeType || '').startsWith('audio/'));
-    let html = '';
-    if (audios.length) {
-      html += `<div style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px">Âm thanh (${audios.length})</div>`;
-      for (const m of audios.slice().reverse()) {
+  const mediaList = msgs.filter(m => m.fileId && ((m.mimeType || '').startsWith('image/') || (m.mimeType || '').startsWith('video/'))).slice().reverse();
+  const showAllMedia = Boolean(state.rpShowAll.media);
+  const visibleMedia = showAllMedia ? mediaList : mediaList.slice(0, 6);
+  const mediaBody = mediaList.length === 0
+    ? '<div class="rp-empty-inline">Chưa có Ảnh/Video được chia sẻ trong hội thoại này</div>'
+    : `<div class="shared-img-grid">${visibleMedia.map(m => {
         const url = `/api/files/${encodeURIComponent(m.fileId)}`;
-        const sender = m.from || m.username || 'Không rõ';
-        const timeStr = formatDateTimeFull(m.timestamp);
-        html += `<div class="shared-file-row">
-          <div class="shared-file-ico" style="width:36px!important;height:36px;background:#eaf3ff!important;color:#0866d6;border-radius:9px">${UI_ICONS.music}</div>
-          <div class="shared-file-info">
-            <div class="shared-file-name">${escHtml(m.filename || 'Audio')}</div>
-            <div class="shared-file-meta">Người gửi: <b>${escHtml(sender)}</b> · ${escHtml(m.fileSize || '')}</div>
-            <div class="shared-file-meta">${escHtml(timeStr)}</div>
-          </div>
-          <a class="shared-file-dl" href="${url}" download="${escHtml(m.filename || 'audio')}" title="Tải xuống">${UI_ICONS.download}</a>
+        const isVideo = (m.mimeType || '').startsWith('video/');
+        const titleInfo = `${m.filename || (isVideo ? 'Video' : 'Ảnh')} · ${m.from || m.username || ''} · ${formatDateTimeFull(m.timestamp)}`;
+        if (isVideo) {
+          return `<div class="shared-media-item" title="${escHtml(titleInfo)}" onclick="openVideoViewer('${url}','${escHtml(m.filename||'video.mp4')}')">
+            <video src="${url}#t=0.1" preload="metadata" muted playsinline></video>
+            <div class="shared-video-badge"><span><svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg></span></div>
+          </div>`;
+        }
+        return `<div class="shared-media-item" title="${escHtml(titleInfo)}" onclick="openImageViewer('${url}','${escHtml(m.filename||'')}')">
+          <img class="shared-img-thumb" src="${url}" alt="${escHtml(m.filename||'')}" loading="lazy">
         </div>`;
-      }
-    }
-    if (files.length) {
-      html += `<div style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;margin:12px 0 8px">File (${files.length})</div>`;
-      for (const m of files.slice().reverse()) {
+      }).join('')}</div>${mediaList.length > 6 ? `<button type="button" class="rp-view-all-btn" onclick="toggleRpShowAll('media')">${showAllMedia ? 'Thu gọn' : `Xem tất cả (${mediaList.length})`}</button>` : ''}`;
+
+  const files = msgs.filter(m => m.fileId && !(m.mimeType || '').startsWith('image/') && !(m.mimeType || '').startsWith('video/')).slice().reverse();
+  const showAllFiles = Boolean(state.rpShowAll.files);
+  const visibleFiles = showAllFiles ? files : files.slice(0, 4);
+  const filesBody = files.length === 0
+    ? '<div class="rp-empty-inline">Chưa có File được chia sẻ trong hội thoại này</div>'
+    : visibleFiles.map(m => {
         const url = `/api/files/${encodeURIComponent(m.fileId)}`;
+        const isAudio = (m.mimeType || '').startsWith('audio/');
         const sender = m.from || m.username || 'Không rõ';
-        const timeStr = formatDateTimeFull(m.timestamp);
         const rawName = (m.filename || 'file').replace(/'/g, "\\'");
-        html += `<div class="shared-file-row">
-          <div class="shared-file-ico">${fileTypeIcon(m.mimeType, m.filename)}</div>
-          <div class="shared-file-info">
+        const safeMime = (m.mimeType || '').replace(/'/g, "\\'");
+        const safeSize = (m.fileSize || '').replace(/'/g, "\\'");
+        const safeSender = sender.replace(/'/g, "\\'");
+        const previewCall = `openFilePreviewModal('${escHtml(m.fileId)}','${rawName}','${safeMime}','${safeSize}','${safeSender}')`;
+        return `<div class="shared-file-row">
+          <div class="shared-file-ico"${isAudio ? ' style="width:36px!important;height:36px;background:#eaf3ff!important;color:#0866d6;border-radius:9px;cursor:pointer"' : ' style="cursor:pointer"'} title="Nhấn để xem nội dung tệp" onclick="${previewCall}">${isAudio ? UI_ICONS.music : fileTypeIcon(m.mimeType, m.filename)}</div>
+          <div class="shared-file-info" title="Nhấn để xem nội dung tệp" onclick="${previewCall}">
             <div class="shared-file-name" title="${escHtml(m.filename || 'File')}">${escHtml(m.filename || 'File')}</div>
-            <div class="shared-file-meta">Người gửi: <b>${escHtml(sender)}</b> · ${escHtml(m.fileSize || '')}</div>
-            <div class="shared-file-meta">${escHtml(timeStr)}</div>
+            <div class="shared-file-meta">${escHtml(sender)} · ${escHtml(m.fileSize || '')}</div>
           </div>
-          <div style="display:flex;gap:5px">
-            <button type="button" class="shared-file-dl" title="Chọn đường dẫn lưu tệp" onclick="saveFileWithLocation('${url}','${rawName}','${escHtml(m.fileId)}')">${UI_ICONS.folderSave}</button>
-            <a class="shared-file-dl" href="${url}" download="${escHtml(m.filename || 'file')}" title="Tải về thư mục Downloads" onclick="markFileDownloaded('${escHtml(m.fileId)}')">${UI_ICONS.download}</a>
+          <div style="display:flex;gap:4px">
+            <button type="button" class="shared-file-dl" title="Xem nội dung tệp" onclick="${previewCall}">${UI_ICONS.eye}</button>
+            ${!isAudio ? `<button type="button" class="shared-file-dl" title="Chọn vị trí lưu" onclick="saveFileWithLocation('${url}','${rawName}','${escHtml(m.fileId)}')">${UI_ICONS.folderSave}</button>` : ''}
+            <a class="shared-file-dl" href="${url}" download="${escHtml(m.filename || 'file')}" title="Tải xuống" onclick="markFileDownloaded('${escHtml(m.fileId)}')">${UI_ICONS.download}</a>
           </div>
         </div>`;
-      }
+      }).join('') + (files.length > 4 ? `<button type="button" class="rp-view-all-btn" onclick="toggleRpShowAll('files')">${showAllFiles ? 'Thu gọn' : `Xem tất cả (${files.length})`}</button>` : '');
+
+  const urlPat = /((https?:\/\/|www\.)[^\s<]+)/gi;
+  const links = [];
+  for (const m of msgs) {
+    if (!m.content) continue;
+    for (const match of m.content.matchAll(urlPat)) {
+      const raw = match[0].replace(/[),.!?;:]+$/, '');
+      const href = raw.startsWith('www.') ? `https://${raw}` : raw;
+      links.push({ url: href, display: raw, from: m.from, time: m.timestamp });
     }
-    if (!html) html = '<div class="rp-empty">Chưa có file nào</div>';
-    dom.rpContent.innerHTML = html;
-  } else if (tab === 'links') {
-    const urlPat = /((https?:\/\/|www\.)[^\s<]+)/gi;
-    const links = [];
-    for (const m of msgs) {
-      if (!m.content) continue;
-      for (const match of m.content.matchAll(urlPat)) {
-        const raw = match[0].replace(/[),.!?;:]+$/, '');
-        const href = raw.startsWith('www.') ? `https://${raw}` : raw;
-        links.push({ url: href, display: raw, from: m.from, time: m.timestamp });
-      }
-    }
-    if (!links.length) { dom.rpContent.innerHTML = '<div class="rp-empty">Chưa có đường dẫn nào</div>'; return; }
-    dom.rpContent.innerHTML = links.slice().reverse().map(l =>
-      `<div class="link-item">
-        <a href="${escHtml(l.url)}" target="_blank" rel="noopener noreferrer">${escHtml(l.display)}</a>
-        <div class="link-meta">${escHtml(l.from)} · ${formatTime(l.time)}</div>
-      </div>`
-    ).join('');
   }
+  const revLinks = links.slice().reverse();
+  const showAllLinks = Boolean(state.rpShowAll.links);
+  const visibleLinks = showAllLinks ? revLinks : revLinks.slice(0, 4);
+  const linksBody = revLinks.length === 0
+    ? '<div class="rp-empty-inline">Chưa có Link được chia sẻ trong hội thoại này</div>'
+    : visibleLinks.map(l => `<div class="link-item"><a href="${escHtml(l.url)}" target="_blank" rel="noopener noreferrer">${escHtml(l.display)}</a><div class="link-meta">${escHtml(l.from)} · ${formatTime(l.time)}</div></div>`).join('')
+      + (revLinks.length > 4 ? `<button type="button" class="rp-view-all-btn" onclick="toggleRpShowAll('links')">${showAllLinks ? 'Thu gọn' : `Xem tất cả (${revLinks.length})`}</button>` : '');
+
+  const allowEditInfo = !isGroup || isOwner || getGroupSettings(g).allowEditInfo !== false;
+  const membersSection = isGroup ? `
+    <div class="rp-section${state.rpCollapsed.has('members') ? ' collapsed' : ''}" data-sec="members">
+      <button type="button" class="rp-section-hdr" onclick="toggleRpSection('members')"><span>Thành viên nhóm</span>${chevSvg}</button>
+      <div class="rp-section-body">
+        <button type="button" class="rp-opt-row" onclick="openRightPanelMembers()">${UI_ICONS.users}<span>${(g?.members || []).length} thành viên</span></button>
+      </div>
+    </div>` : '';
+
+  const securitySection = `
+    <div class="rp-section${state.rpCollapsed.has('security') ? ' collapsed' : ''}" data-sec="security">
+      <button type="button" class="rp-section-hdr" onclick="toggleRpSection('security')"><span>Thiết lập bảo mật</span>${chevSvg}</button>
+      <div class="rp-section-body">
+        <button type="button" class="rp-opt-row" onclick="toggleMsgSearch()">${UI_ICONS.search}<span>Tìm trong hội thoại</span></button>
+        ${!isGroup ? `<button type="button" class="rp-opt-row" onclick="toggleProfilePageForChat('${escHtml(other)}')">${UI_ICONS.user}<span>Xem trang cá nhân</span></button>` : ''}
+        ${!isGroup ? `<button type="button" class="rp-opt-row" onclick="toggleBlockUser('${escHtml(other)}',${blocked})">${blocked ? UI_ICONS.unlock : UI_ICONS.ban}<span>${blocked ? 'Gỡ chặn người này' : 'Chặn người này'}</span></button>` : ''}
+        ${!isGroup && state.friends.some(f => f.username === other) ? `<button type="button" class="rp-opt-row danger" onclick="confirmUnfriend('${escHtml(other)}')">${UI_ICONS.userMinus}<span>Hủy kết bạn</span></button>` : ''}
+        <button type="button" class="rp-opt-row danger" onclick="deleteConversation()">${UI_ICONS.trash}<span>Xóa lịch sử trò chuyện</span></button>
+        ${isGroup ? `<button type="button" class="rp-opt-row danger" onclick="leaveGroup()">${UI_ICONS.logOut}<span>Rời nhóm</span></button>` : ''}
+        ${isOwner ? `<button type="button" class="rp-opt-row danger" onclick="deleteGroup()">${UI_ICONS.trash}<span>Giải tán nhóm</span></button>` : ''}
+      </div>
+    </div>`;
+
+  dom.rpContent.innerHTML = `
+    ${membersSection}
+    <div class="rp-section${state.rpCollapsed.has('media') ? ' collapsed' : ''}" data-sec="media">
+      <button type="button" class="rp-section-hdr" onclick="toggleRpSection('media')"><span>Ảnh/Video</span>${chevSvg}</button>
+      <div class="rp-section-body">${mediaBody}</div>
+    </div>
+    <div class="rp-section${state.rpCollapsed.has('files') ? ' collapsed' : ''}" data-sec="files">
+      <button type="button" class="rp-section-hdr" onclick="toggleRpSection('files')"><span>File</span>${chevSvg}</button>
+      <div class="rp-section-body">${filesBody}</div>
+    </div>
+    <div class="rp-section${state.rpCollapsed.has('links') ? ' collapsed' : ''}" data-sec="links">
+      <button type="button" class="rp-section-hdr" onclick="toggleRpSection('links')"><span>Link</span>${chevSvg}</button>
+      <div class="rp-section-body">${linksBody}</div>
+    </div>
+    ${securitySection}`;
+}
+
+function renderRightPanelManageView(conv) {
+  const gid = conv.id.replace('group:', '');
+  const g = state.groups.get(gid);
+  if (!g) { dom.rpContent.innerHTML = '<div class="rp-empty">Không có thông tin nhóm</div>'; return; }
+  const isOwner = g.createdBy === state.username;
+  const s = getGroupSettings(g);
+  const dis = isOwner ? '' : 'disabled';
+  const roCls = isOwner ? '' : ' readonly';
+
+  const chkRow = (key, label) => `
+    <label class="rp-manage-row${roCls}">
+      <span class="rp-manage-lbl">${escHtml(label)}</span>
+      <input type="checkbox" class="rp-manage-chk" ${s[key] ? 'checked' : ''} ${dis} onchange="toggleGroupSetting('${escHtml(gid)}','${key}',this.checked)">
+    </label>`;
+
+  const swRow = (key, label, hint) => `
+    <div class="rp-manage-row${roCls}">
+      <div class="rp-manage-lbl-wrap">
+        <span class="rp-manage-lbl">${escHtml(label)}</span>
+        <span class="rp-manage-help" title="${escHtml(hint)}">?</span>
+      </div>
+      <label class="rp-manage-switch">
+        <input type="checkbox" ${s[key] ? 'checked' : ''} ${dis} onchange="toggleGroupSetting('${escHtml(gid)}','${key}',this.checked)">
+        <span class="rp-manage-slider"></span>
+      </label>
+    </div>`;
+
+  dom.rpContent.innerHTML = `
+    ${!isOwner ? `<div class="rp-manage-lock-bar">${UI_ICONS.lock}<span>Tính năng chỉ dành cho quản trị viên</span></div>` : ''}
+    <div class="rp-manage-group">
+      <div class="rp-manage-title">Cho phép các thành viên trong nhóm:</div>
+      ${chkRow('allowEditInfo', 'Thay đổi tên & ảnh đại diện của nhóm')}
+      ${chkRow('allowPin', 'Ghim tin nhắn, ghi chú, bình chọn lên đầu hội thoại')}
+      ${chkRow('allowNotes', 'Tạo mới ghi chú, nhắc hẹn')}
+      ${chkRow('allowPolls', 'Tạo mới bình chọn')}
+      ${chkRow('allowSendMessage', 'Gửi tin nhắn')}
+    </div>
+    <div class="rp-manage-group">
+      ${swRow('requireApproval', 'Chế độ phê duyệt thành viên mới', 'Khi bật, chỉ trưởng nhóm được phép thêm thành viên mới vào nhóm')}
+      ${swRow('highlightOwnerMsg', 'Đánh dấu tin nhắn từ trưởng/phó nhóm', 'Hiển thị biểu tượng chìa khóa vàng trên tin nhắn của trưởng nhóm')}
+      ${swRow('allowNewMemberHistory', 'Cho phép thành viên mới đọc tin nhắn gần nhất', 'Thành viên vừa tham gia có thể xem các tin nhắn gần đây trong nhóm')}
+    </div>
+    <div class="rp-manage-group" style="padding-top:8px;padding-bottom:14px">
+      <button type="button" class="rp-opt-row" onclick="openRightPanelMembers()">${UI_ICONS.users}<span>Trưởng nhóm & thành viên (${(g.members || []).length})</span></button>
+      ${isOwner || s.allowEditInfo ? `<button type="button" class="rp-opt-row" onclick="openGroupEditInfoModal()">${UI_ICONS.edit}<span>Đổi tên & ảnh đại diện nhóm</span></button>` : ''}
+      ${isOwner ? `<button type="button" class="rp-opt-row" onclick="transferGroupOwner()">${UI_ICONS.crown}<span>Chuyển quyền trưởng nhóm</span></button>` : ''}
+      <button type="button" class="rp-opt-row danger" onclick="leaveGroup()">${UI_ICONS.logOut}<span>Rời nhóm</span></button>
+      ${isOwner ? `<button type="button" class="rp-opt-row danger" onclick="deleteGroup()">${UI_ICONS.trash}<span>Giải tán nhóm</span></button>` : ''}
+    </div>`;
+}
+
+function toggleProfilePageForChat(username) {
+  if (username) openProfilePage(username);
+}
+
+function renderRightPanelMembersView(conv) {
+  const gid = conv.id.replace('group:', '');
+  const g = state.groups.get(gid);
+  if (!g) { dom.rpContent.innerHTML = '<div class="rp-empty">Không có thông tin nhóm</div>'; return; }
+  const isOwner = g.createdBy === state.username;
+  const members = [...(g.members || [])].sort((a, b) => {
+    if (a === g.createdBy) return -1;
+    if (b === g.createdBy) return 1;
+    if (a === state.username) return 1;
+    if (b === state.username) return -1;
+    return a.localeCompare(b);
+  });
+
+  const rowsHtml = members.map(u => {
+    const isMe = u === state.username;
+    const isLeader = u === g.createdBy;
+    const displayName = isMe ? 'Bạn' : u;
+    return `
+      <div class="rp-member-row" onclick="${isMe ? 'openProfilePage()' : `openRightPanelMemberMenu(event,'${escHtml(gid)}','${escHtml(u)}')`}">
+        <div class="rp-member-av">${userAvatarInner(u)}${isLeader ? OWNER_KEY_BADGE_HTML : ''}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600;color:#081c36;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(displayName)}</div>
+          ${isLeader ? '<div style="font-size:12px;color:#758398;margin-top:1px">Trưởng nhóm</div>' : ''}
+        </div>
+        ${!isMe ? `<button type="button" class="rp-member-more" title="Tùy chọn" onclick="event.stopPropagation();openRightPanelMemberMenu(event,'${escHtml(gid)}','${escHtml(u)}')">•••</button>` : ''}
+      </div>`;
+  }).join('');
+
+  dom.rpContent.innerHTML = `
+    <div style="padding:14px 16px">
+      <button type="button" class="rp-add-member-btn" onclick="addGroupMember()">
+        ${UI_ICONS.userPlus}
+        <span>Thêm thành viên</span>
+      </button>
+      <div class="rp-members-subhdr">
+        <span>Danh sách thành viên (${members.length})</span>
+        ${isOwner ? `<button type="button" class="rp-member-more" style="opacity:1" title="Nhượng quyền trưởng nhóm" onclick="transferGroupOwner()">•••</button>` : ''}
+      </div>
+      <div>${rowsHtml}</div>
+    </div>`;
+}
+
+function openRightPanelMemberMenu(event, gid, targetUsername) {
+  event?.stopPropagation();
+  closeAvatarActionMenu();
+  if (!targetUsername || targetUsername === state.username) return;
+  const g = state.groups.get(gid);
+  const isOwner = Boolean(g && g.createdBy === state.username);
+
+  const menu = document.createElement('div');
+  menu.className = 'avatar-action-popover';
+  menu.innerHTML = `
+    <div class="avatar-popover-head"><div class="conv-avatar" style="width:28px;height:28px;font-size:12px">${userAvatarInner(targetUsername)}</div><span>${escHtml(targetUsername)}</span></div>
+    <button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();startChat('${escHtml(targetUsername)}')">
+      ${UI_ICONS.chat}<span>Nhắn tin</span>
+    </button>
+    <button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();openProfilePage('${escHtml(targetUsername)}')">
+      ${UI_ICONS.user}<span>Xem trang cá nhân</span>
+    </button>
+    ${isOwner ? `<button type="button" class="avatar-popover-item" onclick="closeAvatarActionMenu();confirmTransferGroupOwnerDirect('${escHtml(gid)}','${escHtml(targetUsername)}')">
+      ${UI_ICONS.crown}<span>Nhượng quyền trưởng nhóm</span>
+    </button>
+    <button type="button" class="avatar-popover-item danger" onclick="closeAvatarActionMenu();kickGroupMember('${escHtml(gid)}','${escHtml(targetUsername)}')">
+      ${UI_ICONS.userMinus}<span>Xóa khỏi nhóm</span>
+    </button>` : ''}
+  `;
+  document.body.appendChild(menu);
+
+  const rect = event.currentTarget.getBoundingClientRect();
+  const menuW = 215;
+  const menuH = isOwner ? 186 : 112;
+  let left = rect.left - menuW - 6;
+  if (left < 12) left = Math.min(window.innerWidth - menuW - 12, rect.right + 6);
+  let top = rect.top;
+  if (top + menuH > window.innerHeight - 12) top = Math.max(12, window.innerHeight - menuH - 12);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
 }
 
 // ─── Friend actions ───────────────────────────────────────────────────────────
@@ -1946,15 +4424,34 @@ function openAddFriendModal() {
   $('add-friend-modal-overlay').classList.add('visible');
   dom.phoneSearchInput.value = '';
   dom.phoneSearchResult.innerHTML = '';
+  renderRecentPhoneList();
   dom.phoneSearchInput.focus();
 }
 function closeAddFriendModal() { $('add-friend-modal-overlay').classList.remove('visible'); }
 
+function renderRecentPhoneList() {
+  const box = $('recent-phone-list');
+  if (!box) return;
+  if (!state.recentPhoneSearches.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="zalo-recent-title">Kết quả gần nhất</div>` +
+    state.recentPhoneSearches.map(u => {
+      const phoneDisp = u.phone ? `(+84) ${u.phone.replace(/^0/, '')}` : '';
+      return `<div class="zalo-recent-phone-item" onclick="dom.phoneSearchInput.value='${escHtml(u.phone||'')}';searchByPhone()">
+        <div class="conv-avatar" style="width:36px;height:36px;font-size:13px">${userAvatarInner(u.username)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600;color:#081c36">${escHtml(u.username)}</div>
+          <div style="font-size:11.5px;color:#758398">${escHtml(phoneDisp)}</div>
+        </div>
+      </div>`;
+    }).join('');
+}
+
 function searchByPhone() {
-  const phone = dom.phoneSearchInput.value.trim();
-  if (!phone) return;
+  const raw = dom.phoneSearchInput.value.trim();
+  if (!raw) return;
+  const { normalized } = normalizeVnPhone(raw);
   dom.phoneSearchResult.innerHTML = '<div style="text-align:center;padding:16px;color:#888">Đang tìm...</div>';
-  wsSend({ type: 'search_by_phone', phone });
+  wsSend({ type: 'search_by_phone', phone: normalized });
 }
 
 function renderPhoneSearchResult(results) {
@@ -2061,16 +4558,40 @@ function startChat(username) {
 // ─── Group modal ──────────────────────────────────────────────────────────────
 function openGroupModal() {
   $('group-name-input').value = '';
+  if ($('group-member-search')) $('group-member-search').value = '';
   renderMemberList();
+  updateCreateGroupChips();
   $('group-modal-overlay').classList.add('visible');
   setTimeout(() => $('group-name-input').focus(), 100);
 }
 function closeGroupModal() { $('group-modal-overlay').classList.remove('visible'); }
 
+function updateCreateGroupChips() {
+  const box = $('group-selected-chips');
+  if (!box) return;
+  const selected = [...$('member-list').querySelectorAll('.member-item.selected')].map(el => el.dataset.user);
+  if (!selected.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'flex';
+  box.innerHTML = `<span style="font-size:11px;font-weight:700;color:#52627a;align-self:center;margin-right:4px">Đã chọn (${selected.length}):</span>` +
+    selected.map(u => `<span class="zalo-chip">${escHtml(u)}<button type="button" onclick="toggleCreateGroupUser('${escHtml(u)}')">&times;</button></span>`).join('');
+}
+
+function toggleCreateGroupUser(username) {
+  const el = [...$('member-list').querySelectorAll('.member-item')].find(i => i.dataset.user === username);
+  if (el) { el.classList.toggle('selected'); updateCreateGroupChips(); }
+}
+
+function filterCreateGroupCandidates(q) {
+  const clean = (q || '').trim().toLowerCase();
+  $('member-list').querySelectorAll('.member-item').forEach(el => {
+    const u = (el.dataset.user || '').toLowerCase();
+    el.style.display = (!clean || u.includes(clean)) ? 'flex' : 'none';
+  });
+}
+
 function renderMemberList() {
   const list = $('member-list');
   list.innerHTML = '';
-  // Khi tạo nhóm mới, hiển thị danh sách bạn bè đã kết bạn
   const candidates = new Set(state.friends.map(f => f.username));
   candidates.delete(state.username);
   if (candidates.size === 0) {
@@ -2085,7 +4606,7 @@ function renderMemberList() {
       <div class="member-chk">✓</div>
       <div class="member-av" style="overflow:hidden">${userAvatarInner(user)}</div>
       <span style="font-size:14px">${escHtml(user)}</span>`;
-    item.onclick = () => item.classList.toggle('selected');
+    item.onclick = () => { item.classList.toggle('selected'); updateCreateGroupChips(); };
     list.appendChild(item);
   }
 }
@@ -2177,9 +4698,12 @@ function closeGroupActionModal() {
   $('group-action-modal-overlay')?.classList.remove('visible');
 }
 
-function openGroupActionModal(title, bodyHtml, footerHtml = '') {
+function openGroupActionModal(title, bodyHtml, footerHtml = '', modalMode = '') {
   $('group-action-modal-title').textContent = title;
-  $('group-action-modal-body').innerHTML = bodyHtml;
+  const bodyEl = $('group-action-modal-body');
+  bodyEl.innerHTML = bodyHtml;
+  if (modalMode) bodyEl.dataset.modalMode = modalMode;
+  else delete bodyEl.dataset.modalMode;
   $('group-action-modal-footer').innerHTML = footerHtml || `<button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`;
   $('group-action-modal-overlay').classList.add('visible');
 }
@@ -2189,14 +4713,20 @@ function showGroupMembers() {
   const g = state.groups.get(gid);
   if (!g) return;
   const isOwner = g.createdBy === state.username;
-  const members = g.members || [];
+  const members = [...(g.members || [])].sort((a, b) => {
+    if (a === g.createdBy) return -1;
+    if (b === g.createdBy) return 1;
+    if (a === state.username) return -1;
+    if (b === state.username) return 1;
+    return a.localeCompare(b);
+  });
 
   const rows = members.map(u => {
     const isMemberOwner = u === g.createdBy;
     const isMe = u === state.username;
     const online = isMe || state.onlineUsers.includes(u);
     const statusText = isMe ? '● Bạn' : formatPresenceStatus(u, online);
-    return `<div class="group-member-row">
+    return `<div class="group-member-row group-member-filter-row" data-user="${escHtml(u)}">
       <div class="conv-avatar" style="width:38px;height:38px;font-size:14px;overflow:visible;position:relative">${userAvatarInner(u)}${isMemberOwner ? OWNER_KEY_BADGE_HTML : (online ? '<span class="online-dot"></span>' : '')}</div>
       <div style="min-width:0;flex:1">
         <div style="font-size:14px;font-weight:700;color:#172033;display:flex;align-items:center;flex-wrap:wrap">
@@ -2208,6 +4738,7 @@ function showGroupMembers() {
       <div class="group-member-actions">
         ${!isMe ? `<button class="gm-btn" onclick="closeGroupActionModal();startChat('${escHtml(u)}')">Nhắn tin</button>` : ''}
         <button class="gm-btn" onclick="closeGroupActionModal();openProfilePage('${escHtml(u)}')">Hồ sơ</button>
+        ${(isOwner && !isMe) ? `<button class="gm-btn transfer" onclick="confirmTransferGroupOwnerDirect('${escHtml(gid)}','${escHtml(u)}')">Nhượng quyền</button>` : ''}
         ${(isOwner && !isMe) ? `<button class="gm-btn danger" onclick="kickGroupMemberFromModal('${escHtml(gid)}','${escHtml(u)}')">Xóa</button>` : ''}
       </div>
     </div>`;
@@ -2215,9 +4746,23 @@ function showGroupMembers() {
 
   openGroupActionModal(
     `Thành viên nhóm · ${g.name} (${members.length})`,
-    `<div style="max-height:360px;overflow-y:auto">${rows}</div>`,
-    `<button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`
+    `<div class="zalo-member-search-wrap">
+       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+       <input type="text" placeholder="Tìm thành viên trong nhóm..." oninput="filterGroupMembersModal(this.value)">
+     </div>
+     <div style="max-height:340px;overflow-y:auto">${rows}</div>`,
+    `<button class="btn-primary" onclick="addGroupMember()">+ Thêm thành viên</button>
+     <button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`,
+    'members'
   );
+}
+
+function filterGroupMembersModal(q) {
+  const clean = (q || '').trim().toLowerCase();
+  document.querySelectorAll('.group-member-filter-row').forEach(el => {
+    const u = (el.dataset.user || '').toLowerCase();
+    el.style.display = (!clean || u.includes(clean)) ? 'flex' : 'none';
+  });
 }
 
 function kickGroupMemberFromModal(groupId, targetUsername) {
@@ -2230,36 +4775,64 @@ function addGroupMember() {
   const gid = state.currentConvId?.replace('group:', '');
   const g = state.groups.get(gid);
   if (!g) return;
+  if (g.createdBy !== state.username && getGroupSettings(g).requireApproval) {
+    showToast('Nhóm đang bật chế độ phê duyệt thành viên mới — chỉ trưởng nhóm được thêm.', 'error');
+    return;
+  }
   const currentMembers = new Set(g.members || []);
-  const availableFriends = state.friends.filter(f => !currentMembers.has(f.username));
+  const allFriends = state.friends.slice();
 
-  if (availableFriends.length === 0) {
+  if (allFriends.length === 0) {
     openGroupActionModal(
       'Thêm thành viên vào nhóm',
-      `<div class="rp-empty">Tất cả bạn bè của bạn đều đã ở trong nhóm này (hoặc bạn chưa kết bạn với người mới).</div>`,
+      `<div class="rp-empty">Bạn chưa có bạn bè nào để thêm vào nhóm.</div>`,
       `<button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`
     );
     return;
   }
 
-  const itemsHtml = availableFriends.map(f => `
-    <div class="member-item group-add-candidate" data-user="${escHtml(f.username)}" onclick="this.classList.toggle('selected')">
-      <div class="member-chk">✓</div>
-      <div class="member-av" style="overflow:hidden">${userAvatarInner(f.username)}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:600">${escHtml(f.username)}</div>
-        <div style="font-size:11px;color:${f.online ? '#2ecc71' : '#8893a4'}">${escHtml(formatPresenceStatus(f.username, f.online))}</div>
-      </div>
-    </div>
-  `).join('');
+  const itemsHtml = allFriends.map(f => {
+    const alreadyIn = currentMembers.has(f.username);
+    return `
+      <div class="member-item group-add-candidate${alreadyIn ? ' already-in' : ''}" data-user="${escHtml(f.username)}" ${alreadyIn ? '' : 'onclick="this.classList.toggle(\'selected\');updateGroupAddChips()"'}>
+        <div class="member-chk">✓</div>
+        <div class="member-av" style="overflow:hidden">${userAvatarInner(f.username)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${escHtml(f.username)}</div>
+          <div style="font-size:11px;color:${f.online ? '#2ecc71' : '#8893a4'}">${escHtml(formatPresenceStatus(f.username, f.online))}</div>
+        </div>
+        ${alreadyIn ? '<span class="member-already-tag">Đã tham gia</span>' : ''}
+      </div>`;
+  }).join('');
 
   openGroupActionModal(
-    `Thêm bạn bè vào nhóm · ${g.name}`,
-    `<input type="text" class="modal-input" placeholder="Tìm bạn bè để thêm..." style="margin-bottom:10px" oninput="filterGroupAddCandidates(this.value)">
-     <div id="group-add-member-list" style="max-height:280px;overflow-y:auto;border:1.5px solid var(--gray-mid);border-radius:8px">${itemsHtml}</div>`,
+    `Thêm thành viên · ${g.name}`,
+    `<div class="zalo-member-search-wrap">
+       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+       <input type="text" placeholder="Nhập tên để tìm bạn bè..." oninput="filterGroupAddCandidates(this.value)">
+     </div>
+     <div id="group-add-selected-chips" class="zalo-selected-chips" style="display:none"></div>
+     <div id="group-add-member-list" style="max-height:280px;overflow-y:auto;border:1px solid #dfe4ec;border-radius:8px">${itemsHtml}</div>`,
     `<button class="btn-cancel" onclick="closeGroupActionModal()">Hủy</button>
-     <button class="btn-primary" onclick="submitAddGroupMembers('${escHtml(gid)}')">Thêm vào nhóm</button>`
+     <button class="btn-primary" id="group-add-submit-btn" onclick="submitAddGroupMembers('${escHtml(gid)}')">Xác nhận</button>`
   );
+}
+
+function updateGroupAddChips() {
+  const box = $('group-add-selected-chips');
+  if (!box) return;
+  const selected = [...document.querySelectorAll('.group-add-candidate.selected')].map(el => el.dataset.user);
+  const submitBtn = $('group-add-submit-btn');
+  if (submitBtn) submitBtn.textContent = selected.length ? `Xác nhận (${selected.length})` : 'Xác nhận';
+  if (!selected.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'flex';
+  box.innerHTML = `<span style="font-size:11px;font-weight:700;color:#52627a;align-self:center;margin-right:4px">Đã chọn (${selected.length}):</span>` +
+    selected.map(u => `<span class="zalo-chip">${escHtml(u)}<button type="button" onclick="toggleGroupAddCandidate('${escHtml(u)}')">&times;</button></span>`).join('');
+}
+
+function toggleGroupAddCandidate(username) {
+  const el = [...document.querySelectorAll('.group-add-candidate')].find(i => i.dataset.user === username && !i.classList.contains('already-in'));
+  if (el) { el.classList.toggle('selected'); updateGroupAddChips(); }
 }
 
 function filterGroupAddCandidates(q) {
@@ -2280,10 +4853,14 @@ function submitAddGroupMembers(groupId) {
   closeGroupActionModal();
 }
 
-function transferGroupOwner() {
+function transferGroupOwner(leaveAfter = false) {
   const gid = state.currentConvId?.replace('group:', '');
   const g = state.groups.get(gid);
   if (!g) return;
+  if (g.createdBy !== state.username) {
+    showToast('Chỉ trưởng nhóm mới có quyền chuyển quyền quản trị.', 'error');
+    return;
+  }
   const others = (g.members || []).filter(u => u !== state.username);
   if (others.length === 0) {
     openGroupActionModal(
@@ -2295,48 +4872,77 @@ function transferGroupOwner() {
   }
 
   const itemsHtml = others.map((u, idx) => `
-    <label class="group-member-row" style="cursor:pointer">
+    <label class="transfer-candidate-row${idx === 0 ? ' selected' : ''}" data-user="${escHtml(u)}" onclick="selectTransferCandidate(this)">
       <input type="radio" name="transfer-owner-candidate" value="${escHtml(u)}" ${idx === 0 ? 'checked' : ''} style="accent-color:#0866d6;width:16px;height:16px">
-      <div class="conv-avatar" style="width:36px;height:36px;font-size:13px;overflow:hidden">${userAvatarInner(u)}</div>
+      <div class="conv-avatar" style="width:38px;height:38px;font-size:14px;overflow:hidden">${userAvatarInner(u)}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:600;color:#172033">${escHtml(u)}</div>
-        <div style="font-size:11px;color:#8893a4">${escHtml(formatPresenceStatus(u))}</div>
+        <div style="font-size:14px;font-weight:700;color:#172033">${escHtml(u)}</div>
+        <div style="font-size:11px;color:${state.onlineUsers.includes(u) ? '#2ecc71' : '#8893a4'}">${escHtml(formatPresenceStatus(u))}</div>
       </div>
     </label>
   `).join('');
 
+  const title = leaveAfter ? 'Chọn trưởng nhóm mới trước khi rời nhóm' : 'Chuyển quyền trưởng nhóm';
+  const subtitle = leaveAfter
+    ? 'Bạn đang là Trưởng nhóm. Hãy chọn một thành viên nhận quyền quản trị để có thể rời nhóm:'
+    : 'Chọn một thành viên trong nhóm để nhận quyền Trưởng nhóm:';
+
   openGroupActionModal(
-    'Chuyển quyền trưởng nhóm',
-    `<p style="font-size:13px;color:#536176;margin-bottom:10px">Chọn một thành viên trong nhóm để nhận quyền Trưởng nhóm:</p>
-     <div style="max-height:280px;overflow-y:auto;border:1.5px solid var(--gray-mid);border-radius:8px;padding:4px">${itemsHtml}</div>`,
+    title,
+    `<p style="font-size:13px;color:#536176;margin-bottom:10px">${subtitle}</p>
+     <div class="zalo-member-search-wrap">
+       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+       <input type="text" placeholder="Tìm thành viên..." oninput="filterTransferCandidates(this.value)">
+     </div>
+     <div style="max-height:280px;overflow-y:auto;border:1px solid #dfe4ec;border-radius:10px;padding:6px">${itemsHtml}</div>`,
     `<button class="btn-cancel" onclick="closeGroupActionModal()">Hủy</button>
-     <button class="btn-primary" onclick="confirmTransferGroupOwnerStep('${escHtml(gid)}')">Tiếp tục</button>`
+     <button class="btn-primary" onclick="confirmTransferGroupOwnerStep('${escHtml(gid)}',${leaveAfter})">Tiếp tục</button>`
   );
 }
 
-function confirmTransferGroupOwnerStep(groupId) {
+function selectTransferCandidate(row) {
+  document.querySelectorAll('.transfer-candidate-row').forEach(r => r.classList.remove('selected'));
+  row?.classList.add('selected');
+}
+
+function filterTransferCandidates(q) {
+  const clean = (q || '').trim().toLowerCase();
+  document.querySelectorAll('.transfer-candidate-row').forEach(el => {
+    const u = (el.dataset.user || '').toLowerCase();
+    el.style.display = (!clean || u.includes(clean)) ? 'flex' : 'none';
+  });
+}
+
+function confirmTransferGroupOwnerStep(groupId, leaveAfter = false) {
   const radio = document.querySelector('input[name="transfer-owner-candidate"]:checked');
   const targetUser = radio?.value;
   if (!targetUser) {
     showToast('Vui lòng chọn một thành viên.', 'error');
     return;
   }
+  confirmTransferGroupOwnerDirect(groupId, targetUser, leaveAfter);
+}
+
+function confirmTransferGroupOwnerDirect(groupId, targetUser, leaveAfter = false) {
   const g = state.groups.get(groupId);
-  // Bước xác nhận thêm 1 lần nữa ngay trên giao diện modal
+  if (!g) return;
+  const noteText = leaveAfter
+    ? `• <b>${escHtml(targetUser)}</b> sẽ trở thành Trưởng nhóm mới của "${escHtml(g.name || '')}".<br>• Bạn sẽ rời khỏi nhóm ngay sau khi chuyển quyền.`
+    : `• <b>${escHtml(targetUser)}</b> sẽ có toàn quyền quản lý thành viên, thu hồi tin nhắn và giải tán nhóm.<br>• Bạn sẽ trở thành thành viên thường của nhóm.`;
   openGroupActionModal(
-    'Xác nhận nhượng quyền trưởng nhóm',
-    `<div style="text-align:center;padding:12px 4px">
-       <div class="conv-avatar" style="width:56px;height:56px;margin:0 auto 12px;font-size:20px;overflow:hidden">${userAvatarInner(targetUser)}</div>
-       <p style="font-size:14px;line-height:1.55;color:#172033">Bạn có chắc chắn muốn nhượng quyền <b>Trưởng nhóm "${escHtml(g?.name || '')}"</b> cho <b>${escHtml(targetUser)}</b> không?</p>
-       <p style="font-size:12px;color:#8893a4;margin-top:6px">Sau khi xác nhận, bạn sẽ trở thành thành viên thường của nhóm.</p>
+    leaveAfter ? 'Xác nhận chuyển quyền & rời nhóm' : 'Xác nhận nhượng quyền trưởng nhóm',
+    `<div style="text-align:center;padding:8px 4px">
+       <div class="conv-avatar" style="width:60px;height:60px;margin:0 auto 12px;font-size:22px;overflow:hidden">${userAvatarInner(targetUser)}</div>
+       <p style="font-size:14px;line-height:1.55;color:#172033">Nhượng quyền Trưởng nhóm <b>"${escHtml(g.name || '')}"</b> cho <b>${escHtml(targetUser)}</b>?</p>
+       <div class="transfer-warning-box">${noteText}</div>
      </div>`,
-    `<button class="btn-cancel" onclick="transferGroupOwner()">Quay lại</button>
-     <button class="btn-primary" onclick="executeTransferGroupOwner('${escHtml(groupId)}','${escHtml(targetUser)}')">Xác nhận nhượng quyền</button>`
+    `<button class="btn-cancel" onclick="transferGroupOwner(${leaveAfter})">Quay lại</button>
+     <button class="${leaveAfter ? 'btn-danger' : 'btn-primary'}" onclick="executeTransferGroupOwner('${escHtml(groupId)}','${escHtml(targetUser)}',${leaveAfter})">${leaveAfter ? 'Chuyển quyền & Rời nhóm' : 'Xác nhận nhượng quyền'}</button>`
   );
 }
 
-function executeTransferGroupOwner(groupId, targetUser) {
-  wsSend({ type: 'group_transfer_owner', groupId, username: targetUser });
+function executeTransferGroupOwner(groupId, targetUser, leaveAfter = false) {
+  wsSend({ type: 'group_transfer_owner', groupId, username: targetUser, leaveAfter });
   closeGroupActionModal();
 }
 
@@ -2344,6 +4950,10 @@ function openGroupEditInfoModal() {
   const gid = state.currentConvId?.replace('group:', '');
   const g = state.groups.get(gid);
   if (!g) return;
+  if (g.createdBy !== state.username && getGroupSettings(g).allowEditInfo === false) {
+    showToast('Chỉ trưởng nhóm mới được thay đổi tên & ảnh đại diện nhóm.', 'error');
+    return;
+  }
   const avPreview = groupAvatarInner(gid, g.name);
   openGroupActionModal(
     'Đổi tên & Ảnh đại diện nhóm',
@@ -2405,18 +5015,53 @@ function submitGroupRename(groupId) {
   closeGroupActionModal();
 }
 
-function leaveGroup(){if(!confirm('Bạn muốn rời nhóm?'))return;wsSend({type:'group_leave',groupId:state.currentConvId.replace('group:','')});closeConversationOptions();}
+function leaveGroup() {
+  const gid = state.currentConvId?.replace('group:', '');
+  const g = state.groups.get(gid);
+  closeConversationOptions();
+  if (!gid || !g) return;
+  if (g.createdBy === state.username) {
+    const others = (g.members || []).filter(u => u !== state.username);
+    if (others.length > 0) {
+      transferGroupOwner(true);
+    } else if (confirm('Bạn là thành viên duy nhất còn lại trong nhóm. Bạn muốn giải tán nhóm luôn không?')) {
+      wsSend({ type: 'group_delete', groupId: gid });
+    }
+    return;
+  }
+  if (!confirm('Bạn muốn rời nhóm?')) return;
+  wsSend({ type: 'group_leave', groupId: gid });
+}
 function deleteGroup(){if(!confirm('Giải tán nhóm? Tất cả thành viên sẽ không thể tiếp tục trò chuyện.'))return;wsSend({type:'group_delete',groupId:state.currentConvId.replace('group:','')});closeConversationOptions();}
 
 function openProfilePage(username=state.username){
   state.profileTarget=username;
-  $('profile-page-title').textContent='Trang cá nhân · '+username;
+  state.profileEditMode=false;
+  if ($('profile-modal-back')) $('profile-modal-back').style.display='none';
+  $('profile-page-title').textContent = username===state.username ? 'Thông tin tài khoản' : `Thông tin tài khoản · ${username}`;
   wsSend({type:'user_profile',username});
-  $('profile-page-content').innerHTML='<div class="rp-empty">Đang tải trang cá nhân...</div>';
+  $('profile-page-content').innerHTML='<div class="rp-empty">Đang tải thông tin tài khoản...</div>';
   $('profile-modal-overlay').classList.add('visible');
   wsSend({type:'get_posts',username});
 }
-function closeProfilePage(){$('profile-modal-overlay')?.classList.remove('visible');}
+function closeProfilePage(){
+  state.profileEditMode=false;
+  $('profile-modal-overlay')?.classList.remove('visible');
+}
+function openProfileEditView(){
+  if (!state.lastPostsPayload || state.lastPostsPayload.username !== state.username) return;
+  state.profileEditMode = true;
+  renderProfilePage(state.lastPostsPayload);
+}
+function closeProfileEditView(){
+  state.profileEditMode = false;
+  if (state.lastPostsPayload) renderProfilePage(state.lastPostsPayload);
+}
+function submitProfileEdit(){
+  const bioEl = $('profile-edit-bio-input');
+  if (bioEl) wsSend({type:'profile_update',bio:bioEl.value.trim()});
+  state.profileEditMode = false;
+}
 function renderProfilePage(msg){
   const p=msg.profile||{username:msg.username,bio:''};const posts=msg.posts||[];const own=msg.username===state.username;
   if (msg.username) {
@@ -2427,19 +5072,59 @@ function renderProfilePage(msg){
   if (state.currentConvId) renderMessages();
   state.currentProfileBio=p.bio||'';
   if(own && dom.userAvatarBtn) dom.userAvatarBtn.innerHTML=p.avatarPath?`<img src="${escHtml(p.avatarPath)}" alt="Ảnh đại diện">`:getInitials(msg.username);
-  const avatar=p.avatarPath?`<img class="profile-page-avatar" src="${escHtml(p.avatarPath)}">`:`<div class="profile-page-avatar" style="display:flex;align-items:center;justify-content:center;font-size:32px">${getInitials(msg.username)}</div>`;
+
+  if (own && state.profileEditMode) {
+    if ($('profile-modal-back')) $('profile-modal-back').style.display='inline-flex';
+    $('profile-page-title').textContent = 'Cập nhật thông tin cá nhân';
+    $('profile-page-content').innerHTML = `
+      <div style="padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+        <div>
+          <label class="modal-label">Tên tài khoản</label>
+          <input class="modal-input" type="text" value="${escHtml(msg.username)}" disabled style="opacity:.7">
+        </div>
+        <div>
+          <label class="modal-label">Tiểu sử / Giới thiệu</label>
+          <textarea id="profile-edit-bio-input" class="modal-input" rows="3" placeholder="Nhập tiểu sử của bạn...">${escHtml(p.bio||'')}</textarea>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <label class="gm-btn" style="cursor:pointer">Đổi ảnh đại diện<input type="file" accept="image/*" hidden onchange="uploadProfileAvatar(this.files[0])"></label>
+          ${p.avatarPath ? `<button type="button" class="gm-btn danger" onclick="clearProfileAvatar()">Xóa ảnh đại diện</button>` : ''}
+          <label class="gm-btn" style="cursor:pointer">Đổi ảnh bìa<input type="file" accept="image/*" hidden onchange="uploadProfileCover(this.files[0])"></label>
+          ${p.coverPath ? `<button type="button" class="gm-btn danger" onclick="clearProfileCover()">Xóa ảnh bìa</button>` : ''}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;padding-top:10px;border-top:1px solid #eef0f4">
+          <button type="button" class="btn-cancel" onclick="closeProfileEditView()">Hủy</button>
+          <button type="button" class="btn-primary" onclick="submitProfileEdit()">Cập nhật</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if ($('profile-modal-back')) $('profile-modal-back').style.display='none';
+  $('profile-page-title').textContent = own ? 'Thông tin tài khoản' : `Thông tin tài khoản · ${msg.username}`;
+
+  const avInner = p.avatarPath?`<img src="${escHtml(p.avatarPath)}" alt="Ảnh đại diện">`:getInitials(msg.username);
   const isOnline = own || state.onlineUsers.includes(msg.username);
   const statusStr = own ? '● Đang hoạt động' : formatPresenceStatus(msg.username, isOnline);
-  let html=`<div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 0">${p.coverPath?`<img src="${escHtml(p.coverPath)}" style="width:100%;height:140px;object-fit:cover;border-radius:12px">`:''}${avatar}<h3>${escHtml(msg.username)}</h3><div style="font-size:12px;color:${isOnline?'#2ecc71':'#8893a4'};font-weight:600">${escHtml(statusStr)}</div><p>${escHtml(p.bio||'Chưa có tiểu sử')}</p>`;
-  if(own) {
-    html+=`<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
-      <button class="btn-primary" onclick="editProfileBio()">Chỉnh sửa tiểu sử</button>
-      <label class="btn-cancel" style="cursor:pointer;padding:9px 14px;border-radius:8px">Đổi ảnh đại diện<input type="file" accept="image/*" hidden onchange="uploadProfileAvatar(this.files[0])"></label>
-      ${p.avatarPath ? `<button class="btn-cancel" style="padding:9px 12px;border-radius:8px;color:#d93025" onclick="clearProfileAvatar()">Xóa ảnh đại diện</button>` : ''}
-      <label class="btn-cancel" style="cursor:pointer;padding:9px 14px;border-radius:8px">Đổi ảnh bìa<input type="file" accept="image/*" hidden onchange="uploadProfileCover(this.files[0])"></label>
-      ${p.coverPath ? `<button class="btn-cancel" style="padding:9px 12px;border-radius:8px;color:#d93025" onclick="clearProfileCover()">Xóa ảnh bìa</button>` : ''}
+  const phoneStr = p.phone ? `(+84) ${p.phone.replace(/^0/, '')}` : 'Chưa cập nhật';
+
+  let html = `
+    <div class="zalo-acc-cover">
+      ${p.coverPath ? `<img src="${escHtml(p.coverPath)}" alt="Ảnh bìa">` : ''}
+      ${own ? `<label class="zalo-acc-cover-btn">Đổi ảnh bìa<input type="file" accept="image/*" hidden onchange="uploadProfileCover(this.files[0])"></label>` : ''}
+    </div>
+    <div class="zalo-acc-head-row">
+      <div class="zalo-acc-av-wrap">
+        <div class="zalo-acc-av">${avInner}</div>
+        ${own ? `<label class="zalo-acc-cam-btn" title="Đổi ảnh đại diện">${UI_ICONS.camera}<input type="file" accept="image/*" hidden onchange="uploadProfileAvatar(this.files[0])"></label>` : ''}
+      </div>
+      <div class="zalo-acc-name-line">
+        <span>${escHtml(msg.username)}</span>
+        ${own ? `<button type="button" class="zalo-acc-edit-ico" title="Cập nhật" onclick="openProfileEditView()">${UI_ICONS.edit}</button>` : ''}
+      </div>
     </div>`;
-  } else {
+
+  if (!own) {
     const { rel, requestId } = getRelationshipWith(msg.username);
     const reqId = requestId || state.viewedProfile?.requestId || '';
     let relButton = rel==='friend'
@@ -2447,15 +5132,28 @@ function renderProfilePage(msg){
       : rel==='pending_sent'
         ? `<button class="btn-friend btn-cancel-req" onclick="cancelFriendRequest('${escHtml(reqId)}','${escHtml(msg.username)}')">Hủy lời mời</button>`
         : rel==='pending_received'
-          ? `<button class="btn-friend btn-accept-req" onclick="acceptFriendRequest('${escHtml(reqId)}','${escHtml(msg.username)}')">Chấp nhận lời mời</button>`
+          ? `<button class="btn-friend btn-accept-req" onclick="acceptFriendRequest('${escHtml(reqId)}','${escHtml(msg.username)}')">Chấp nhận</button>`
           : `<button class="btn-friend btn-add-friend" onclick="sendFriendRequest('${escHtml(msg.username)}')">+ Kết bạn</button>`;
-    html+=`<div style="display:flex;gap:8px;flex-wrap:wrap">${relButton}<button class="btn-primary" onclick="startChat('${escHtml(msg.username)}');closeProfilePage()">Nhắn tin</button><button class="btn-cancel" onclick="toggleBlockUser('${escHtml(msg.username)}',${state.blockedUsers.has(msg.username)})">${state.blockedUsers.has(msg.username)?'Gỡ chặn':'Chặn'}</button></div>`;
+    html += `<div style="display:flex;gap:8px;flex-wrap:wrap;padding:0 18px 14px">${relButton}<button class="btn-primary" style="padding:8px 16px" onclick="startChat('${escHtml(msg.username)}');closeProfilePage()">Nhắn tin</button><button class="btn-cancel" style="padding:8px 14px" onclick="toggleBlockUser('${escHtml(msg.username)}',${state.blockedUsers.has(msg.username)})">${state.blockedUsers.has(msg.username)?'Gỡ chặn':'Chặn'}</button></div>`;
   }
-  html+='</div>';
-  if(own)html+=`<div class="profile-post-compose"><textarea id="new-post-content" placeholder="Bạn đang nghĩ gì?"></textarea><button class="btn-primary" style="margin-top:8px" onclick="createProfilePost()">Đăng bài viết</button></div>`;
-  html+='<h3 style="margin:18px 0 4px">Bài viết</h3>';
-  if(!posts.length)html+='<div class="rp-empty">Chưa có bài viết nào.</div>';
+
+  html += `
+    <div class="zalo-acc-section">
+      <div class="zalo-acc-sec-title">Thông tin cá nhân</div>
+      <div class="zalo-acc-kv">
+        <div class="zalo-acc-k">Tiểu sử</div><div class="zalo-acc-v">${escHtml(p.bio||'Chưa có tiểu sử')}</div>
+        <div class="zalo-acc-k">Điện thoại</div><div class="zalo-acc-v">${escHtml(phoneStr)}</div>
+        <div class="zalo-acc-k">Trạng thái</div><div class="zalo-acc-v" style="color:${isOnline?'#1f9d55':'#758398'};font-weight:600">${escHtml(statusStr)}</div>
+      </div>
+      ${own ? `<button type="button" class="zalo-acc-update-btn" onclick="openProfileEditView()">${UI_ICONS.edit}<span>Cập nhật</span></button>` : ''}
+    </div>`;
+
+  html += `<div class="zalo-acc-section">`;
+  if(own) html+=`<div class="profile-post-compose" style="margin-bottom:14px"><textarea id="new-post-content" placeholder="Bạn đang nghĩ gì?"></textarea><button class="btn-primary" style="margin-top:8px" onclick="createProfilePost()">Đăng bài viết</button></div>`;
+  html+='<div class="zalo-acc-sec-title">Bài viết</div>';
+  if(!posts.length) html+='<div class="rp-empty" style="padding:12px 0">Chưa có bài viết nào.</div>';
   posts.forEach(post=>{html+=`<div class="profile-post"><div style="font-weight:700">${escHtml(post.username)}</div><div style="font-size:11px;color:#8992a3">${formatTime(post.timestamp)}</div><p style="white-space:pre-wrap">${escHtml(post.content)}</p></div>`;});
+  html += `</div>`;
   $('profile-page-content').innerHTML=html;
 }
 function renderProfileRelationshipActions(){
@@ -2499,45 +5197,111 @@ async function uploadProfileAvatar(file){
   catch(e){showToast(e.message,'error');}
 }
 
-function openImageViewer(url, filename = '') {
+function getConversationMediaItems() {
+  const conv = state.conversations.get(state.currentConvId);
+  if (!conv || !conv.messages) return [];
+  return conv.messages
+    .filter(m => m.fileId && ((m.mimeType || '').startsWith('image/') || (m.mimeType || '').startsWith('video/')))
+    .slice()
+    .reverse()
+    .map(m => ({
+      url: `/api/files/${encodeURIComponent(m.fileId)}`,
+      filename: m.filename || ((m.mimeType || '').startsWith('video/') ? 'video.mp4' : 'image'),
+      isVideo: (m.mimeType || '').startsWith('video/'),
+      sender: m.from || m.username || '',
+      timestamp: m.timestamp || '',
+    }));
+}
+
+function renderMediaViewerAtIndex(index) {
+  const list = state.mediaViewerList || [];
+  if (!list.length) return;
+  const total = list.length;
+  if (index < 0 || index >= total) return;
+  state.mediaViewerIndex = index;
+  const item = list[state.mediaViewerIndex];
+
   const overlay = $('image-viewer');
   const img = $('image-viewer-img');
   const cap = $('image-viewer-caption');
+  const prevBtn = $('image-viewer-prev');
+  const nextBtn = $('image-viewer-next');
   if (!overlay || !img) return;
-  const oldVid = $('image-viewer-video');
-  if (oldVid) { oldVid.pause(); oldVid.remove(); }
-  img.style.display = 'block';
-  img.src = url;
+
+  if (prevBtn) {
+    prevBtn.style.display = 'flex';
+    prevBtn.disabled = state.mediaViewerIndex <= 0;
+  }
+  if (nextBtn) {
+    nextBtn.style.display = 'flex';
+    nextBtn.disabled = state.mediaViewerIndex >= total - 1;
+  }
+
+  let vid = $('image-viewer-video');
+  if (item.isVideo) {
+    img.style.display = 'none';
+    img.src = '';
+    if (!vid) {
+      vid = document.createElement('video');
+      vid.id = 'image-viewer-video';
+      vid.controls = true;
+      vid.autoplay = true;
+      vid.playsInline = true;
+      vid.style.cssText = 'max-width:min(90vw,1180px);max-height:78vh;border-radius:10px;background:#000;box-shadow:0 12px 50px rgba(0,0,0,.5)';
+      img.insertAdjacentElement('afterend', vid);
+    }
+    vid.src = item.url;
+  } else {
+    if (vid) { vid.pause(); vid.remove(); }
+    img.style.display = 'block';
+    img.src = item.url;
+  }
+
   const dl = $('image-viewer-download');
-  if (dl) { dl.href = url; dl.download = filename || 'image'; }
-  if (cap) cap.textContent = filename || '';
+  if (dl) { dl.href = item.url; dl.download = item.filename; }
+  if (cap) {
+    const metaParts = [];
+    metaParts.push(`[${state.mediaViewerIndex + 1}/${total}]`);
+    if (item.filename) metaParts.push(item.filename);
+    if (item.sender) metaParts.push(`Người gửi: ${item.sender}`);
+    if (item.timestamp && typeof formatDateTimeFull === 'function') metaParts.push(formatDateTimeFull(item.timestamp));
+    cap.textContent = metaParts.join(' · ');
+  }
   overlay.classList.add('visible');
   document.body.style.overflow = 'hidden';
 }
 
-function openVideoViewer(url, filename = 'video.mp4') {
-  const overlay = $('image-viewer');
-  const img = $('image-viewer-img');
-  const cap = $('image-viewer-caption');
-  if (!overlay || !img) return;
-  img.style.display = 'none';
-  img.src = '';
-  let vid = $('image-viewer-video');
-  if (!vid) {
-    vid = document.createElement('video');
-    vid.id = 'image-viewer-video';
-    vid.controls = true;
-    vid.autoplay = true;
-    vid.playsInline = true;
-    vid.style.cssText = 'max-width:min(94vw,1200px);max-height:80vh;border-radius:10px;background:#000;box-shadow:0 12px 50px rgba(0,0,0,.5)';
-    img.insertAdjacentElement('afterend', vid);
+function stepMediaViewer(delta) {
+  try { window.getSelection()?.removeAllRanges(); } catch (_) {}
+  const list = state.mediaViewerList || [];
+  if (!list.length) return;
+  const nextIdx = (state.mediaViewerIndex || 0) + delta;
+  if (nextIdx < 0 || nextIdx >= list.length) return;
+  renderMediaViewerAtIndex(nextIdx);
+}
+
+function openImageViewer(url, filename = '') {
+  const list = getConversationMediaItems();
+  const idx = list.findIndex(x => x.url === url);
+  if (idx !== -1) {
+    state.mediaViewerList = list;
+    renderMediaViewerAtIndex(idx);
+  } else {
+    state.mediaViewerList = [{ url, filename: filename || 'image', isVideo: false, sender: '', timestamp: '' }];
+    renderMediaViewerAtIndex(0);
   }
-  vid.src = url;
-  const dl = $('image-viewer-download');
-  if (dl) { dl.href = url; dl.download = filename || 'video.mp4'; }
-  if (cap) cap.textContent = filename || '';
-  overlay.classList.add('visible');
-  document.body.style.overflow = 'hidden';
+}
+
+function openVideoViewer(url, filename = 'video.mp4') {
+  const list = getConversationMediaItems();
+  const idx = list.findIndex(x => x.url === url);
+  if (idx !== -1) {
+    state.mediaViewerList = list;
+    renderMediaViewerAtIndex(idx);
+  } else {
+    state.mediaViewerList = [{ url, filename: filename || 'video.mp4', isVideo: true, sender: '', timestamp: '' }];
+    renderMediaViewerAtIndex(0);
+  }
 }
 
 function closeImageViewer() {
@@ -2546,6 +5310,8 @@ function closeImageViewer() {
   if (img) { img.src = ''; img.style.display = 'block'; }
   const vid = $('image-viewer-video');
   if (vid) { vid.pause(); vid.remove(); }
+  state.mediaViewerList = [];
+  state.mediaViewerIndex = 0;
   document.body.style.overflow = '';
 }
 
@@ -2569,6 +5335,17 @@ function getInitials(name) {
   if (!name) return '?';
   const clean = name.replace(/[^\p{L}\p{N}]/gu, '');
   return clean ? clean[0].toUpperCase() : '?';
+}
+
+function formatRelativeShort(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const diffMin = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (diffMin >= 0 && diffMin < 1) return 'Vừa xong';
+  if (diffMin >= 1 && diffMin < 60) return `${diffMin} phút`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr >= 1 && diffHr < 24 && d.toDateString() === new Date().toDateString()) return `${diffHr} giờ`;
+  return d.toLocaleDateString('vi', { day: '2-digit', month: '2-digit' });
 }
 
 function formatTime(isoStr) {
@@ -2647,9 +5424,60 @@ dom.passwordInput?.addEventListener('keydown', e => e.key === 'Enter' && login()
 
 dom.sendBtn?.addEventListener('click', sendMessage);
 dom.messageInput?.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  if (e.key === 'Backspace' && state.replyMention && dom.messageInput.selectionStart === 0 && dom.messageInput.selectionEnd === 0) {
+    e.preventDefault();
+    clearReplyMention();
+    return;
+  }
+  if (e.key === 'Escape' && $('mention-suggest-box')?.style.display !== 'none') {
+    e.preventDefault();
+    closeMentionBox();
+    return;
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    const box = $('mention-suggest-box');
+    const firstOpt = box && box.style.display !== 'none' ? box.querySelector('.zalo-mention-opt') : null;
+    if (firstOpt) {
+      e.preventDefault();
+      firstOpt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      return;
+    }
+    e.preventDefault();
+    sendMessage();
+  }
 });
-dom.messageInput?.addEventListener('input', () => { autoResize(dom.messageInput); handleTypingInput(); });
+dom.messageInput?.addEventListener('input', () => {
+  autoResize(dom.messageInput);
+  handleTypingInput();
+  updateComposerActionBtn();
+  handleMentionAutocomplete();
+});
+
+$('image-input')?.addEventListener('change', async e => {
+  const files = [...(e.target.files || [])];
+  for (const f of files) {
+    await sendFile(f);
+  }
+  e.target.value = '';
+});
+
+function openSettingsModal() {
+  openGroupActionModal(
+    'Cài đặt',
+    `<div style="display:flex;flex-direction:column;gap:8px">
+       <button type="button" class="option-action" onclick="closeGroupActionModal();openProfilePage()">
+         <span class="opt-ico">${UI_ICONS.user}</span><span>Thông tin tài khoản (${escHtml(state.username || '')})</span>
+       </button>
+       <button type="button" class="option-action" onclick="Notification?.requestPermission?.().then(p=>showToast('Quyền thông báo: '+p,'info'))">
+         <span class="opt-ico">${UI_ICONS.bell}</span><span>Bật thông báo trình duyệt</span>
+       </button>
+       <button type="button" class="option-action danger" onclick="closeGroupActionModal();logout()">
+         <span class="opt-ico">${UI_ICONS.logOut}</span><span>Đăng xuất</span>
+       </button>
+     </div>`,
+    `<button class="btn-cancel" onclick="closeGroupActionModal()">Đóng</button>`
+  );
+}
 
 dom.attachBtn?.addEventListener('click', () => dom.fileInput.click());
 dom.fileInput?.addEventListener('change', async e => {
@@ -2659,9 +5487,11 @@ dom.fileInput?.addEventListener('change', async e => {
   }
 });
 
-// Chỉ lọc danh sách đoạn chat/bạn bè hiện có, KHÔNG tìm người lạ chưa kết bạn ở thanh tìm kiếm đoạn chat
-dom.searchInput?.addEventListener('input', () => {
-  renderConversationList();
+// Ô tìm kiếm phía trên: hỗ trợ lọc đoạn chat + tìm SĐT kết bạn trực tiếp kiểu Zalo PC
+dom.searchInput?.addEventListener('focus', enterSidebarSearch);
+dom.searchInput?.addEventListener('input', handleSidebarSearchInput);
+dom.searchInput?.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); exitSidebarSearch(); dom.searchInput.blur(); }
 });
 
 dom.emojiSearch?.addEventListener('input', e => {
@@ -2684,20 +5514,42 @@ dom.phoneSearchInput?.addEventListener('keydown', e => { if (e.key === 'Enter') 
 
 // Close emoji picker & avatar popover when clicking outside
 document.addEventListener('click', e => {
-  if (!dom.emojiPicker.contains(e.target) && e.target !== $('emoji-btn') && !$('emoji-btn').contains(e.target)) {
+  if (!dom.emojiPicker.contains(e.target)
+      && e.target !== $('emoji-btn') && !$('emoji-btn')?.contains(e.target)
+      && e.target !== $('inline-emoji-btn') && !$('inline-emoji-btn')?.contains(e.target)) {
     closeEmojiPicker();
   }
-  if (!e.target.closest('.avatar-action-popover') && !e.target.closest('.clickable-av')) {
+  if (!e.target.closest('.avatar-action-popover') && !e.target.closest('.clickable-av') && !e.target.closest('.rp-member-row')) {
     closeAvatarActionMenu();
+  }
+  if (!e.target.closest('#user-menu-popover') && !e.target.closest('#user-avatar-display')) {
+    closeUserMenu();
+  }
+  if (!e.target.closest('.zalo-msg-menu') && !e.target.closest('.msg-act-circle.more')) {
+    closeMessageMenu();
+  }
+  if (!e.target.closest('.message-reaction-area')) {
+    document.querySelectorAll('.message-reaction-area.picker-open').forEach(el => el.classList.remove('picker-open'));
+  }
+  if (!e.target.closest('#mention-suggest-box') && e.target !== dom.messageInput) {
+    closeMentionBox();
   }
 });
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
+  if ($('image-viewer')?.classList.contains('visible')) {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); stepMediaViewer(-1); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); stepMediaViewer(1); return; }
+  }
   if (e.key === 'Escape') {
+    closeMentionBox();
     document.querySelector('.reaction-people-overlay')?.remove();
     document.querySelector('.forward-overlay')?.remove();
+    closeMessageMenu();
+    if (state.multiSelectMode) exitMultiSelectMode();
     closeAvatarActionMenu();
+    closeFilePreviewModal();
     closeGroupModal();
     closeGroupActionModal();
     closeImageViewer();
@@ -2712,6 +5564,7 @@ document.addEventListener('keydown', e => {
 
 // Modal backdrop close
 $('group-modal-overlay')?.addEventListener('click', e => { if (e.target === $('group-modal-overlay')) closeGroupModal(); });
+$('file-preview-modal-overlay')?.addEventListener('click', e => { if (e.target === $('file-preview-modal-overlay')) closeFilePreviewModal(); });
 $('group-action-modal-overlay')?.addEventListener('click', e => { if (e.target === $('group-action-modal-overlay')) closeGroupActionModal(); });
 $('add-friend-modal-overlay')?.addEventListener('click', e => { if (e.target === $('add-friend-modal-overlay')) closeAddFriendModal(); });
 $('freq-modal-overlay')?.addEventListener('click', e => { if (e.target === $('freq-modal-overlay')) closeFriendReqModal(); });
@@ -2720,10 +5573,11 @@ function closeFriendReqModal() { $('freq-modal-overlay')?.classList.remove('visi
 
 // ─── Global expose ────────────────────────────────────────────────────────────
 Object.assign(window, {
-  markFileDownloaded, saveFileWithLocation,
-  selectConversation, switchTab, openGroupModal, closeGroupModal, submitCreateGroup,
-  logout, openImageViewer, openVideoViewer, closeImageViewer, showPanel,
-  toggleRightPanel, closeRightPanel, switchRpTab,
+  markFileDownloaded, saveFileWithLocation, openFilePreviewModal, closeFilePreviewModal, copyFilePreviewContent,
+  setWordPreviewZoom, printWordPreview, toggleCodePreviewWrap, switchExcelPreviewSheet, selectExcelPreviewCell, selectPptPreviewSlide,
+  selectConversation, switchTab, switchContactsSubView, setContactsSearch, setContactsSort, toggleRpSection, toggleRpShowAll, enterSidebarSearch, exitSidebarSearch, openSearchConvTarget, clearRecentSearches, saveRecentSearch, openGroupModal, closeGroupModal, submitCreateGroup,
+  logout, cancelSessionRestore, openImageViewer, openVideoViewer, closeImageViewer, stepMediaViewer, showPanel,
+  toggleRightPanel, closeRightPanel, openRightPanelMembers, openRightPanelManage, backToRightPanelInfo, openRightPanelMemberMenu, toggleUserMenu, closeUserMenu, switchRpTab, toggleGroupSetting, togglePinConversation, toggleProfilePageForChat,
   toggleMsgSearch, closeMsgSearch, stepMsgSearch,
   openAddFriendModal, closeAddFriendModal, searchByPhone,
   sendFriendRequest, acceptFriendRequest, rejectFriendRequest, cancelFriendRequest,
@@ -2732,10 +5586,14 @@ Object.assign(window, {
   toggleAudioPlay, seekAudio,
   toggleRecording, stopAndSendRecording, cancelRecording,
   toggleEmojiPicker, closeEmojiPicker,
-  reactToMessage,revokeMessage,hideMessageForMe,showReactionPeople,replyToMessage,forwardMessage,filterForwardTargets,sendForwardedMessage,openConversationOptions,closeConversationOptions,
-  openProfilePage,closeProfilePage,editProfileBio,createProfilePost,uploadProfileAvatar,uploadProfileCover,clearProfileAvatar,clearProfileCover,openFriendReqModal,
-  toggleBlockUser,showGroupMembers,addGroupMember,filterGroupAddCandidates,submitAddGroupMembers,transferGroupOwner,confirmTransferGroupOwnerStep,executeTransferGroupOwner,leaveGroup,deleteGroup,
+  reactToMessage,revokeMessage,hideMessageForMe,showReactionPeople,replyToMessage,clearReply,clearReplyMention,selectMentionCandidate,forwardMessage,filterForwardTargets,sendForwardedMessage,openConversationOptions,closeConversationOptions,
+  openMessageMenu,openMessageContextMenu,closeMessageMenu,copyMessageText,togglePinMessage,unpinCurrentMessage,jumpToMessage,toggleStarMessage,enterMultiSelectMode,exitMultiSelectMode,toggleSelectMessage,multiSelectCopy,multiSelectForward,multiSelectDeleteForMe,openMessageDetails,
+  openProfilePage,closeProfilePage,openProfileEditView,closeProfileEditView,submitProfileEdit,editProfileBio,createProfilePost,uploadProfileAvatar,uploadProfileCover,clearProfileAvatar,clearProfileCover,openFriendReqModal,
+  toggleBlockUser,showGroupMembers,filterGroupMembersModal,addGroupMember,filterGroupAddCandidates,submitAddGroupMembers,transferGroupOwner,selectTransferCandidate,filterTransferCandidates,confirmTransferGroupOwnerStep,confirmTransferGroupOwnerDirect,executeTransferGroupOwner,leaveGroup,deleteGroup,
   openGroupEditInfoModal,uploadGroupAvatarFile,clearGroupAvatar,submitGroupRename,closeGroupActionModal,
   openAvatarActionMenu,closeAvatarActionMenu,kickGroupMember,kickGroupMemberFromModal,
   deleteConversation,toggleMuteConversation,
 });
+
+// Tự động khôi phục phiên đăng nhập khi F5 nếu tài khoản chưa bấm Đăng xuất
+bootSessionRestore();

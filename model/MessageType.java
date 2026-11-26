@@ -59,8 +59,16 @@ public enum MessageType {
     @SerializedName("group_transfer_owner") GROUP_TRANSFER_OWNER,
     @SerializedName("group_leave")      GROUP_LEAVE,
     @SerializedName("group_delete")     GROUP_DELETE,
+    @SerializedName("group_update_settings") GROUP_UPDATE_SETTINGS,
     @SerializedName("delete_message_for_me") DELETE_MESSAGE_FOR_ME,
     @SerializedName("message_hidden") MESSAGE_HIDDEN,
     @SerializedName("conversation_list") CONVERSATION_LIST,
-    @SerializedName("blocked_users") BLOCKED_USERS
+    @SerializedName("blocked_users") BLOCKED_USERS,
+    @SerializedName("resume_session") RESUME_SESSION,
+    @SerializedName("pin_message") PIN_MESSAGE,
+    @SerializedName("unpin_message") UNPIN_MESSAGE,
+    @SerializedName("message_pinned") MESSAGE_PINNED,
+    @SerializedName("toggle_star_message") TOGGLE_STAR_MESSAGE,
+    @SerializedName("message_starred") MESSAGE_STARRED,
+    @SerializedName("p2p_signal") P2P_SIGNAL
 }
