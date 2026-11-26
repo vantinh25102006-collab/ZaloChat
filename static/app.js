@@ -2653,7 +2653,21 @@ function buildFileBubble(msg, isMine, showSender = false) {
   </div>`;
 }
 
-// ─── Xem trước nội dung File trực tiếp trên nền tảng (File Preview Modal) ─────
+// ─── Xem trước nội dung File trực tiếp trên nền tảng (Bộ công cụ Word / Excel / PPT / PDF / Code) ─────
+function setPreviewHeaderTheme(themeClass) {
+  const hdr = document.querySelector('#file-preview-modal-overlay .file-preview-hdr');
+  if (!hdr) return;
+  hdr.classList.remove('theme-word', 'theme-excel', 'theme-ppt', 'theme-pdf', 'theme-code');
+  if (themeClass) hdr.classList.add(themeClass);
+}
+
+function releasePreviewBlobUrl() {
+  if (state.currentPreviewBlobUrl) {
+    try { URL.revokeObjectURL(state.currentPreviewBlobUrl); } catch (_) {}
+    state.currentPreviewBlobUrl = null;
+  }
+}
+
 async function openFilePreviewModal(fileId, filename = 'Tệp đính kèm', mimeType = '', fileSize = '', sender = '') {
   if (!fileId) return;
   const url = `/api/files/${encodeURIComponent(fileId)}`;
@@ -2680,8 +2694,28 @@ async function openFilePreviewModal(fileId, filename = 'Tệp đính kèm', mime
   const dlBtn = $('file-preview-download-btn');
   if (!overlay || !bodyEl) return;
 
+  releasePreviewBlobUrl();
+
+  let toolBadge = 'Trình xem tệp';
+  if (['docx','doc','rtf'].includes(ext)) {
+    setPreviewHeaderTheme('theme-word');
+    toolBadge = 'Công cụ Microsoft Word';
+  } else if (['xlsx','xls','csv','tsv'].includes(ext)) {
+    setPreviewHeaderTheme('theme-excel');
+    toolBadge = 'Công cụ Microsoft Excel';
+  } else if (['pptx','ppt'].includes(ext)) {
+    setPreviewHeaderTheme('theme-ppt');
+    toolBadge = 'Công cụ PowerPoint';
+  } else if (ext === 'pdf' || mime === 'application/pdf') {
+    setPreviewHeaderTheme('theme-pdf');
+    toolBadge = 'Công cụ đọc PDF';
+  } else {
+    setPreviewHeaderTheme('theme-code');
+    toolBadge = 'Trình xem Mã nguồn & Văn bản';
+  }
+
   if (titleEl) titleEl.textContent = filename || 'Tệp đính kèm';
-  const metaParts = [];
+  const metaParts = [toolBadge];
   if (fileSize) metaParts.push(fileSize);
   if (sender) metaParts.push(`Người gửi: ${sender}`);
   if (subEl) subEl.textContent = metaParts.join(' · ');
@@ -2694,45 +2728,98 @@ async function openFilePreviewModal(fileId, filename = 'Tệp đính kèm', mime
     dlBtn.onclick = () => markFileDownloaded(fileId);
   }
   state.currentPreviewText = '';
+  state.excelPreviewSheets = [];
+  state.pptPreviewSlides = [];
 
-  bodyEl.innerHTML = '<div style="margin:auto;padding:32px;color:#cdd6f4;font-size:14px">Đang tải nội dung tệp...</div>';
+  bodyEl.innerHTML = '<div style="margin:auto;padding:36px;color:#334155;font-size:14px;font-weight:600">Đang khởi tạo công cụ xem tệp...</div>';
   overlay.classList.add('visible');
 
-  // 1. Nếu là file PDF -> nhúng trình đọc PDF trực tiếp trong iframe
+  // 1. Công cụ đọc PDF chuyên dụng (tạo Blob application/pdf ngay trên trình duyệt để luôn mở PDF Reader thay vì bị tải về)
   if (mime === 'application/pdf' || ext === 'pdf') {
-    bodyEl.innerHTML = `<iframe class="file-preview-iframe" src="${url}?inline=true" title="${escHtml(filename)}"></iframe>`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Không tải được tệp PDF (' + res.status + ')');
+      const buf = await res.arrayBuffer();
+      const pdfBlob = new Blob([buf], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      state.currentPreviewBlobUrl = blobUrl;
+      bodyEl.innerHTML = `
+        <div class="office-toolbar" style="background:#202124;color:#e8eaed;border-bottom-color:#3c4043">
+          <div class="office-toolbar-group">
+            <span>📄 <b>Trình đọc PDF tích hợp</b> · Hỗ trợ phóng to, tìm kiếm, xoay trang và in trực tiếp</span>
+          </div>
+          <div class="office-toolbar-group">
+            <a class="office-tool-btn" href="${blobUrl}" target="_blank" rel="noopener" style="text-decoration:none;background:#3c4043;color:#fff;border-color:#5f6368">Mở toàn màn hình ở tab mới ↗</a>
+          </div>
+        </div>
+        <iframe class="file-preview-iframe" src="${blobUrl}" title="${escHtml(filename)}"></iframe>`;
+    } catch (err) {
+      bodyEl.innerHTML = `<div style="margin:auto;padding:32px;color:#ef4444;text-align:center">Lỗi mở PDF: ${escHtml(err.message || '')}</div>`;
+    }
     return;
   }
 
-  // 2. Nếu là file Audio -> hiển thị trình phát âm thanh trong modal
+  // 2. Công cụ nghe Audio
   if (mime.startsWith('audio/') || ['mp3','wav','ogg','oga','m4a'].includes(ext)) {
     bodyEl.innerHTML = `<div style="margin:auto;padding:40px;text-align:center">
-      <audio src="${url}" controls autoplay style="width:min(420px,80vw)"></audio>
+      <audio src="${url}" controls autoplay style="width:min(440px,80vw)"></audio>
     </div>`;
     return;
   }
 
-  // 3. Đọc trực tiếp luồng byte của file từ endpoint có sẵn GET /api/files/{fileId} ngay trên trình duyệt
-  // (hoạt động tức thì mà không cần khởi động lại Server Java!)
+  // 3. Giải mã trực tiếp trên trình duyệt (Word .docx, Excel .xlsx/.csv, PowerPoint .pptx, ZIP, Code/Text)
   try {
-    let data = null;
-    // Thử gọi /preview trước nếu server đã build bản mới, nếu 404 Not Found thì tự đọc và giải mã trực tiếp từ GET /api/files/{fileId}
-    try {
-      const pRes = await fetch(`${url}/preview`);
-      if (pRes.ok) data = await pRes.json();
-    } catch (_) {}
+    const data = await parseFilePreviewClientSide(url, filename, ext, mime);
 
-    if (!data) {
-      data = await parseFilePreviewClientSide(url, filename, ext, mime);
-    }
-
-    if (data.mode === 'docx') {
-      state.currentPreviewText = data.content || '';
+    // ── CÔNG CỤ MICROSOFT WORD (.docx, .rtf) ──
+    if (data.mode === 'word') {
+      state.currentPreviewText = data.plainText || '';
       if (copyBtn && state.currentPreviewText) copyBtn.style.display = 'inline-flex';
-      bodyEl.innerHTML = `<div class="file-preview-doc-wrap">${escHtml(data.content || '(Tệp Word trống)')}</div>`;
+      const wordCount = state.currentPreviewText ? state.currentPreviewText.trim().split(/\s+/).filter(Boolean).length : 0;
+      bodyEl.innerHTML = `
+        <div class="office-toolbar">
+          <div class="office-toolbar-group">
+            <span>📘 <b>Chế độ Tài liệu Word (Document View)</b></span>
+            <span style="color:#94a3b8">|</span>
+            <span>${data.paraCount || 1} đoạn văn · ${wordCount} từ</span>
+          </div>
+          <div class="office-toolbar-group">
+            <span>Thu phóng:</span>
+            <button type="button" class="office-tool-btn" onclick="setWordPreviewZoom(0.85)">85%</button>
+            <button type="button" class="office-tool-btn" onclick="setWordPreviewZoom(1)">100%</button>
+            <button type="button" class="office-tool-btn" onclick="setWordPreviewZoom(1.2)">120%</button>
+            <button type="button" class="office-tool-btn" onclick="printWordPreview()">🖨️ In tài liệu</button>
+          </div>
+        </div>
+        <div class="word-canvas">
+          <div class="word-pages-holder" id="word-preview-page">
+            <div class="word-page">
+              <div class="word-page-content">${data.html || '<p style="color:#94a3b8">(Tài liệu Word trống)</p>'}</div>
+            </div>
+          </div>
+        </div>`;
       return;
     }
 
+    // ── CÔNG CỤ MICROSOFT EXCEL (.xlsx, .csv, .tsv) ──
+    if (data.mode === 'excel') {
+      state.excelPreviewSheets = data.sheets || [];
+      state.currentPreviewText = data.plainText || '';
+      if (copyBtn && state.currentPreviewText) copyBtn.style.display = 'inline-flex';
+      renderExcelPreviewWorkspace(bodyEl, 0);
+      return;
+    }
+
+    // ── CÔNG CỤ MICROSOFT POWERPOINT (.pptx) ──
+    if (data.mode === 'ppt') {
+      state.pptPreviewSlides = data.slides || [];
+      state.currentPreviewText = data.plainText || '';
+      if (copyBtn && state.currentPreviewText) copyBtn.style.display = 'inline-flex';
+      renderPptPreviewWorkspace(bodyEl, 0);
+      return;
+    }
+
+    // ── CÔNG CỤ XEM GÓI NÉN (.zip) ──
     if (data.mode === 'zip') {
       const entries = data.entries || [];
       const rows = entries.map(e => `
@@ -2742,59 +2829,219 @@ async function openFilePreviewModal(fileId, filename = 'Tệp đính kèm', mime
         </div>
       `).join('') || '<div style="padding:20px;color:#758398;text-align:center">Tệp ZIP rỗng</div>';
       bodyEl.innerHTML = `<div class="file-preview-zip-list">
-        <div style="font-size:13px;font-weight:700;color:#4a586e;margin-bottom:10px">Danh sách tệp bên trong gói nén (${entries.length} mục):</div>
+        <div style="font-size:13px;font-weight:700;color:#4a586e;margin-bottom:10px">📦 Danh sách tệp bên trong gói nén (${entries.length} mục):</div>
         ${rows}
       </div>`;
       return;
     }
 
-    if (data.mode === 'csv') {
-      state.currentPreviewText = data.content || '';
-      if (copyBtn) copyBtn.style.display = 'inline-flex';
-      const sep = ext === 'tsv' ? '\t' : ',';
-      const lines = (data.content || '').split(/\r?\n/).filter(l => l.trim().length > 0).slice(0, 200);
-      if (lines.length > 0) {
-        const headerCells = lines[0].split(sep).map(c => `<th>${escHtml(c.replace(/^"|"$/g, ''))}</th>`).join('');
-        const bodyRows = lines.slice(1).map(line => {
-          const cols = line.split(sep).map(c => `<td>${escHtml(c.replace(/^"|"$/g, ''))}</td>`).join('');
-          return `<tr>${cols}</tr>`;
-        }).join('');
-        bodyEl.innerHTML = `<div class="file-preview-table-wrap">
-          <table class="file-preview-table">
-            <thead><tr>${headerCells}</tr></thead>
-            <tbody>${bodyRows}</tbody>
-          </table>
-        </div>`;
-        return;
-      }
-    }
-
+    // ── CÔNG CỤ TRÌNH XEM CODE & VĂN BẢN (.java, .js, .py, .sql, .json, .txt, .md...) ──
     if (data.mode === 'text') {
       const content = data.content || '';
       state.currentPreviewText = content;
       if (copyBtn) copyBtn.style.display = 'inline-flex';
       const lines = content.split(/\r?\n/);
       const lineNumbers = lines.map((_, i) => i + 1).join('\n');
+      const langLabel = (ext || 'TEXT').toUpperCase();
       const truncNote = data.truncated
-        ? `<div style="padding:8px 16px;background:#313244;color:#f9e2af;font-size:12px">Tệp lớn: Đang hiển thị 512 KB đầu tiên. Tải xuống để xem toàn bộ.</div>`
+        ? `<span style="color:#f59e0b;font-weight:600">· Đang hiển thị 512 KB đầu tiên</span>`
         : '';
-      bodyEl.innerHTML = `${truncNote}<div class="file-preview-code-wrap">
-        <pre class="file-preview-lines">${lineNumbers}</pre>
-        <pre class="file-preview-code">${escHtml(content)}</pre>
-      </div>`;
+      bodyEl.innerHTML = `
+        <div class="office-toolbar" style="background:#181825;color:#a6adc8;border-bottom-color:#313244">
+          <div class="office-toolbar-group">
+            <span style="background:#313244;color:#89b4fa;padding:2px 8px;border-radius:4px;font-weight:700;font-family:monospace">${escHtml(langLabel)}</span>
+            <span>${lines.length} dòng · ${content.length.toLocaleString()} ký tự ${truncNote}</span>
+          </div>
+          <div class="office-toolbar-group">
+            <button type="button" class="office-tool-btn" style="background:#313244;color:#cdd6f4;border-color:#45475a" onclick="toggleCodePreviewWrap()">⇄ Tự động xuống dòng</button>
+          </div>
+        </div>
+        <div class="file-preview-code-wrap">
+          <pre class="file-preview-lines">${lineNumbers}</pre>
+          <pre class="file-preview-code" id="file-preview-code-block">${highlightCodeSyntax(content, ext)}</pre>
+        </div>`;
       return;
     }
 
-    // Định dạng nhị phân khác không thể hiển thị dạng chữ
-    bodyEl.innerHTML = `<div style="margin:auto;padding:40px;text-align:center;color:#cdd6f4">
+    // Định dạng nhị phân cũ (.doc, .xls nhị phân đời 97-2003 hoặc .exe)
+    bodyEl.innerHTML = `<div style="margin:auto;padding:40px;text-align:center;color:#1e293b;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.08);max-width:480px">
       <div style="margin-bottom:14px;display:inline-block">${fileTypeIcon(mimeType, filename)}</div>
-      <div style="font-size:15px;font-weight:700;margin-bottom:6px">${escHtml(filename)}</div>
-      <div style="font-size:13px;color:#a6adc8;margin-bottom:18px">Định dạng tệp nhị phân này không hỗ trợ xem văn bản trực tiếp. Vui lòng tải xuống để mở bằng ứng dụng chuyên dụng.</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px">${escHtml(filename)}</div>
+      <div style="font-size:13px;color:#64748b;margin-bottom:18px;line-height:1.5">Định dạng tệp nhị phân này không hỗ trợ giải mã trực tiếp trên trình duyệt. Bạn có thể mở hoặc tải tệp xuống bên dưới.</div>
       <a class="btn-primary" href="${url}" download="${escHtml(filename)}" style="text-decoration:none;display:inline-block" onclick="markFileDownloaded('${escHtml(fileId)}')">Tải tệp xuống máy</a>
     </div>`;
   } catch (err) {
-    bodyEl.innerHTML = `<div style="margin:auto;padding:32px;color:#f38ba8;text-align:center">Lỗi tải xem trước: ${escHtml(err.message || 'Không xác định')}</div>`;
+    bodyEl.innerHTML = `<div style="margin:auto;padding:32px;color:#ef4444;text-align:center;font-weight:600">Lỗi tải xem trước: ${escHtml(err.message || 'Không xác định')}</div>`;
   }
+}
+
+// ─── Các hàm tương tác trên thanh công cụ Word / Excel / PowerPoint / Code ───
+function setWordPreviewZoom(scale) {
+  const page = $('word-preview-page');
+  if (!page) return;
+  page.style.transform = `scale(${scale})`;
+  page.style.marginBottom = scale > 1 ? `${Math.round((scale - 1) * page.offsetHeight)}px` : '0px';
+}
+
+function printWordPreview() {
+  const page = $('word-preview-page');
+  if (!page) return;
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) return;
+  win.document.write(`<!DOCTYPE html><html><head><title>In tài liệu</title><style>
+    body{font-family:'Times New Roman',Calibri,serif;padding:40px 56px;color:#111827;line-height:1.65;font-size:15px}
+    table{width:100%;border-collapse:collapse;margin:12px 0}td,th{border:1px solid #94a3b8;padding:7px 10px}
+    h1{color:#1e3a8a}h2{color:#1e40af}h3{color:#1d4ed8}
+  </style></head><body>${page.innerHTML}</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+function toggleCodePreviewWrap() {
+  const codeEl = $('file-preview-code-block');
+  if (!codeEl) return;
+  const wrapped = codeEl.style.whiteSpace === 'pre-wrap';
+  codeEl.style.whiteSpace = wrapped ? 'pre' : 'pre-wrap';
+  codeEl.style.wordBreak = wrapped ? 'normal' : 'break-word';
+}
+
+function excelColName(index) {
+  let name = '';
+  let n = index;
+  while (n >= 0) {
+    name = String.fromCharCode((n % 26) + 65) + name;
+    n = Math.floor(n / 26) - 1;
+  }
+  return name;
+}
+
+function renderExcelPreviewWorkspace(bodyEl, sheetIdx = 0) {
+  const sheets = state.excelPreviewSheets || [];
+  if (!sheets.length) {
+    bodyEl.innerHTML = '<div style="margin:auto;padding:32px;color:#64748b">Bảng tính Excel trống</div>';
+    return;
+  }
+  const activeIdx = Math.max(0, Math.min(sheetIdx, sheets.length - 1));
+  const sheet = sheets[activeIdx];
+  const rows = sheet.rows || [];
+  const maxCols = Math.max(8, sheet.maxCols || 0, ...rows.map(r => r.length));
+  const totalRows = Math.max(20, rows.length);
+
+  // Cập nhật nội dung sao chép theo sheet đang mở
+  state.currentPreviewText = rows.map(r => r.join('\t')).join('\n');
+
+  let colHeadersHtml = '<th class="excel-corner-hdr"></th>';
+  for (let c = 0; c < maxCols; c++) {
+    colHeadersHtml += `<th class="excel-col-hdr">${excelColName(c)}</th>`;
+  }
+
+  let bodyRowsHtml = '';
+  for (let r = 0; r < totalRows; r++) {
+    const rowData = rows[r] || [];
+    let cellsHtml = `<th class="excel-row-hdr">${r + 1}</th>`;
+    for (let c = 0; c < maxCols; c++) {
+      const val = rowData[c] != null ? String(rowData[c]) : '';
+      const cellRef = `${excelColName(c)}${r + 1}`;
+      const isNum = val !== '' && !isNaN(Number(val));
+      const alignStyle = isNum ? ' style="text-align:right;color:#0369a1"' : '';
+      cellsHtml += `<td data-ref="${cellRef}" data-val="${escHtml(val)}"${alignStyle} onclick="selectExcelPreviewCell(this)">${escHtml(val)}</td>`;
+    }
+    bodyRowsHtml += `<tr>${cellsHtml}</tr>`;
+  }
+
+  const tabsHtml = sheets.map((s, idx) => `
+    <button type="button" class="excel-sheet-tab${idx === activeIdx ? ' active' : ''}" onclick="switchExcelPreviewSheet(${idx})">
+      📊 ${escHtml(s.name || ('Sheet' + (idx + 1)))}
+    </button>
+  `).join('');
+
+  const firstVal = (rows[0] && rows[0][0] != null) ? String(rows[0][0]) : '';
+
+  bodyEl.innerHTML = `
+    <div class="excel-formula-bar">
+      <div class="excel-cell-ref" id="excel-cell-ref">A1</div>
+      <div class="excel-fx-lbl">fx</div>
+      <div class="excel-formula-val" id="excel-formula-val">${escHtml(firstVal)}</div>
+      <div style="font-size:12px;color:#64748b;padding:0 6px">${rows.length} hàng × ${ sheet.maxCols || maxCols } cột</div>
+    </div>
+    <div class="excel-grid-container">
+      <table class="excel-sheet-table">
+        <thead><tr>${colHeadersHtml}</tr></thead>
+        <tbody>${bodyRowsHtml}</tbody>
+      </table>
+    </div>
+    <div class="excel-sheet-tabs">${tabsHtml}</div>`;
+}
+
+function switchExcelPreviewSheet(idx) {
+  const bodyEl = $('file-preview-body');
+  if (bodyEl) renderExcelPreviewWorkspace(bodyEl, idx);
+}
+
+function selectExcelPreviewCell(td) {
+  if (!td) return;
+  document.querySelectorAll('.excel-sheet-table td.selected-cell').forEach(el => el.classList.remove('selected-cell'));
+  td.classList.add('selected-cell');
+  const refEl = $('excel-cell-ref');
+  const valEl = $('excel-formula-val');
+  if (refEl) refEl.textContent = td.getAttribute('data-ref') || 'A1';
+  if (valEl) valEl.textContent = td.getAttribute('data-val') || '';
+}
+
+function renderPptPreviewWorkspace(bodyEl, slideIdx = 0) {
+  const slides = state.pptPreviewSlides || [];
+  if (!slides.length) {
+    bodyEl.innerHTML = '<div style="margin:auto;padding:32px;color:#e5e5e5">Bản trình chiếu PowerPoint trống</div>';
+    return;
+  }
+  const activeIdx = Math.max(0, Math.min(slideIdx, slides.length - 1));
+  const current = slides[activeIdx];
+
+  const thumbsHtml = slides.map((s, i) => `
+    <div class="ppt-thumb${i === activeIdx ? ' active' : ''}" onclick="selectPptPreviewSlide(${i})">
+      <div class="ppt-thumb-num">Slide ${i + 1}</div>
+      <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(s.title || '(Không tiêu đề)')}</div>
+    </div>
+  `).join('');
+
+  const bulletsHtml = (current.lines || []).map(line => `<p>• ${escHtml(line)}</p>`).join('') || '<p style="color:#94a3b8">(Slide không có văn bản)</p>';
+
+  bodyEl.innerHTML = `
+    <div class="office-toolbar" style="background:#1f1f1f;color:#e5e5e5;border-bottom-color:#383838">
+      <div class="office-toolbar-group">
+        <span>📽️ <b>Slide ${activeIdx + 1} / ${slides.length}</b></span>
+      </div>
+      <div class="office-toolbar-group">
+        <button type="button" class="office-tool-btn" style="background:#2d2d2d;color:#fff;border-color:#444" ${activeIdx <= 0 ? 'disabled' : ''} onclick="selectPptPreviewSlide(${activeIdx - 1})">◀ Slide trước</button>
+        <button type="button" class="office-tool-btn" style="background:#2d2d2d;color:#fff;border-color:#444" ${activeIdx >= slides.length - 1 ? 'disabled' : ''} onclick="selectPptPreviewSlide(${activeIdx + 1})">Slide tiếp ▶</button>
+      </div>
+    </div>
+    <div class="ppt-workspace">
+      <div class="ppt-sidebar">${thumbsHtml}</div>
+      <div class="ppt-stage">
+        <div class="ppt-slide-card">
+          ${current.title ? `<h2>${escHtml(current.title)}</h2>` : ''}
+          ${bulletsHtml}
+        </div>
+      </div>
+    </div>`;
+}
+
+function selectPptPreviewSlide(idx) {
+  const bodyEl = $('file-preview-body');
+  if (bodyEl) renderPptPreviewWorkspace(bodyEl, idx);
+}
+
+function highlightCodeSyntax(text, ext) {
+  let safe = escHtml(text);
+  const codeExts = new Set(['java','js','jsx','ts','tsx','py','c','cpp','h','hpp','cs','go','rs','php','rb','kt','swift','sql','json','xml','html','css']);
+  if (!codeExts.has(ext)) return safe;
+  // Tô màu chú thích, chuỗi, từ khóa và annotation
+  safe = safe.replace(/(\/\/[^\n]*|#[^\n]*)/g, '<span class="tok-com">$1</span>');
+  safe = safe.replace(/(@[A-Za-z_][A-Za-z0-9_]*)/g, '<span class="tok-ann">$1</span>');
+  safe = safe.replace(/\b(public|private|protected|class|interface|enum|extends|implements|static|final|void|int|long|double|float|boolean|char|byte|String|var|let|const|function|async|await|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|throws|new|this|super|import|package|from|export|default|null|true|false|SELECT|FROM|WHERE|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|JOIN|LEFT|RIGHT|INNER|ORDER|BY|GROUP|LIMIT)\b/g, '<span class="tok-kw">$1</span>');
+  return safe;
 }
 
 function formatBytesHuman(bytes) {
@@ -2804,95 +3051,331 @@ function formatBytesHuman(bytes) {
   return (kb / 1024).toFixed(1) + ' MB';
 }
 
-async function parseZipBufferClientSide(buffer, extractEntryName = null) {
+// ─── Bộ giải nén ZIP / Office OpenXML (.docx, .xlsx, .pptx) ngay trên trình duyệt ───
+async function openZipArchiveClientSide(buffer) {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
   const decoder = new TextDecoder('utf-8');
-  const entries = [];
-  let extractedText = null;
-  let offset = 0;
+  const entryRecords = [];
 
-  while (offset + 30 <= bytes.length) {
-    const sig = view.getUint32(offset, true);
-    if (sig !== 0x04034b50) break; // Local file header signature
-    const flags = view.getUint16(offset + 6, true);
-    const method = view.getUint16(offset + 8, true);
-    const compSize = view.getUint32(offset + 18, true);
-    const uncompSize = view.getUint32(offset + 22, true);
-    const nameLen = view.getUint16(offset + 26, true);
-    const extraLen = view.getUint16(offset + 28, true);
-    const nameBytes = bytes.subarray(offset + 30, offset + 30 + nameLen);
-    const name = decoder.decode(nameBytes);
-    const dataStart = offset + 30 + nameLen + extraLen;
-    // Nếu bit 3 của flags bật (Data Descriptor) và compSize == 0 thì dừng quét tuần tự và dùng Central Directory ở cuối file
-    if ((flags & 8) !== 0 && compSize === 0) break;
-
-    const isDir = name.endsWith('/');
-    entries.push({ name, dir: isDir, size: isDir ? '' : formatBytesHuman(uncompSize) });
-
-    if (extractEntryName && name === extractEntryName && dataStart + compSize <= bytes.length) {
-      const rawSlice = bytes.subarray(dataStart, dataStart + compSize);
-      if (method === 0) {
-        extractedText = decoder.decode(rawSlice);
-      } else if (method === 8 && typeof DecompressionStream !== 'undefined') {
-        const ds = new DecompressionStream('deflate-raw');
-        const writer = ds.writable.getWriter();
-        writer.write(rawSlice);
-        writer.close();
-        const decompBuf = await new Response(ds.readable).arrayBuffer();
-        extractedText = decoder.decode(new Uint8Array(decompBuf));
-      }
-    }
-    offset = dataStart + compSize;
-  }
-
-  // Nếu file ZIP/DOCX dùng Data Descriptor (compSize ở Local Header = 0), đọc Central Directory ở cuối file
-  if ((entries.length === 0 || (extractEntryName && extractedText === null)) && bytes.length >= 22) {
-    let eocdOffset = -1;
+  // Ưu tiên đọc Central Directory ở cuối file ZIP để luôn lấy đúng compSize (kể cả khi file Office bật cờ Data Descriptor bit 3)
+  let eocdOffset = -1;
+  if (bytes.length >= 22) {
     const minSearch = Math.max(0, bytes.length - 65557);
     for (let i = bytes.length - 22; i >= minSearch; i--) {
       if (view.getUint32(i, true) === 0x06054b50) { eocdOffset = i; break; }
     }
-    if (eocdOffset !== -1) {
-      const cdCount = view.getUint16(eocdOffset + 10, true);
-      let cdPos = view.getUint32(eocdOffset + 16, true);
-      entries.length = 0;
-      for (let i = 0; i < cdCount && cdPos + 46 <= bytes.length; i++) {
-        if (view.getUint32(cdPos, true) !== 0x02014b50) break;
-        const method = view.getUint16(cdPos + 10, true);
-        const compSize = view.getUint32(cdPos + 20, true);
-        const uncompSize = view.getUint32(cdPos + 24, true);
-        const nameLen = view.getUint16(cdPos + 28, true);
-        const extraLen = view.getUint16(cdPos + 30, true);
-        const commentLen = view.getUint16(cdPos + 32, true);
-        const localHdrOffset = view.getUint32(cdPos + 42, true);
-        const name = decoder.decode(bytes.subarray(cdPos + 46, cdPos + 46 + nameLen));
-        const isDir = name.endsWith('/');
-        entries.push({ name, dir: isDir, size: isDir ? '' : formatBytesHuman(uncompSize) });
+  }
 
-        if (extractEntryName && name === extractEntryName && localHdrOffset + 30 <= bytes.length) {
-          const lNameLen = view.getUint16(localHdrOffset + 26, true);
-          const lExtraLen = view.getUint16(localHdrOffset + 28, true);
-          const dataStart = localHdrOffset + 30 + lNameLen + lExtraLen;
-          if (dataStart + compSize <= bytes.length) {
-            const rawSlice = bytes.subarray(dataStart, dataStart + compSize);
-            if (method === 0) {
-              extractedText = decoder.decode(rawSlice);
-            } else if (method === 8 && typeof DecompressionStream !== 'undefined') {
-              const ds = new DecompressionStream('deflate-raw');
-              const writer = ds.writable.getWriter();
-              writer.write(rawSlice);
-              writer.close();
-              const decompBuf = await new Response(ds.readable).arrayBuffer();
-              extractedText = decoder.decode(new Uint8Array(decompBuf));
-            }
-          }
-        }
-        cdPos += 46 + nameLen + extraLen + commentLen;
+  if (eocdOffset !== -1) {
+    const cdCount = view.getUint16(eocdOffset + 10, true);
+    let cdPos = view.getUint32(eocdOffset + 16, true);
+    for (let i = 0; i < cdCount && cdPos + 46 <= bytes.length; i++) {
+      if (view.getUint32(cdPos, true) !== 0x02014b50) break;
+      const method = view.getUint16(cdPos + 10, true);
+      const compSize = view.getUint32(cdPos + 20, true);
+      const uncompSize = view.getUint32(cdPos + 24, true);
+      const nameLen = view.getUint16(cdPos + 28, true);
+      const extraLen = view.getUint16(cdPos + 30, true);
+      const commentLen = view.getUint16(cdPos + 32, true);
+      const localHdrOffset = view.getUint32(cdPos + 42, true);
+      const name = decoder.decode(bytes.subarray(cdPos + 46, cdPos + 46 + nameLen));
+      const isDir = name.endsWith('/');
+      let dataStart = -1;
+      if (localHdrOffset + 30 <= bytes.length) {
+        const lNameLen = view.getUint16(localHdrOffset + 26, true);
+        const lExtraLen = view.getUint16(localHdrOffset + 28, true);
+        dataStart = localHdrOffset + 30 + lNameLen + lExtraLen;
       }
+      entryRecords.push({ name, dir: isDir, size: isDir ? '' : formatBytesHuman(uncompSize), method, compSize, uncompSize, dataStart });
+      cdPos += 46 + nameLen + extraLen + commentLen;
+    }
+  } else {
+    // Fallback quét Local File Header từ đầu file
+    let offset = 0;
+    while (offset + 30 <= bytes.length) {
+      if (view.getUint32(offset, true) !== 0x04034b50) break;
+      const flags = view.getUint16(offset + 6, true);
+      const method = view.getUint16(offset + 8, true);
+      const compSize = view.getUint32(offset + 18, true);
+      const uncompSize = view.getUint32(offset + 22, true);
+      const nameLen = view.getUint16(offset + 26, true);
+      const extraLen = view.getUint16(offset + 28, true);
+      const name = decoder.decode(bytes.subarray(offset + 30, offset + 30 + nameLen));
+      const dataStart = offset + 30 + nameLen + extraLen;
+      if ((flags & 8) !== 0 && compSize === 0) break;
+      const isDir = name.endsWith('/');
+      entryRecords.push({ name, dir: isDir, size: isDir ? '' : formatBytesHuman(uncompSize), method, compSize, uncompSize, dataStart });
+      offset = dataStart + compSize;
     }
   }
-  return { entries, extractedText };
+
+  async function readEntryText(entryName) {
+    const rec = entryRecords.find(r => r.name === entryName);
+    if (!rec || rec.dataStart < 0 || rec.dataStart + rec.compSize > bytes.length) return null;
+    const rawSlice = bytes.subarray(rec.dataStart, rec.dataStart + rec.compSize);
+    if (rec.method === 0) {
+      return decoder.decode(rawSlice);
+    }
+    if (rec.method === 8 && typeof DecompressionStream !== 'undefined') {
+      const ds = new DecompressionStream('deflate-raw');
+      const writer = ds.writable.getWriter();
+      writer.write(rawSlice);
+      writer.close();
+      const decompBuf = await new Response(ds.readable).arrayBuffer();
+      return decoder.decode(new Uint8Array(decompBuf));
+    }
+    return null;
+  }
+
+  return { entries: entryRecords, readEntryText };
+}
+
+// ─── Chuyển đổi XML của Word (word/document.xml) sang trang HTML có định dạng ───
+function parseDocxXmlToHtml(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  const body = doc.getElementsByTagName('w:body')[0] || doc.documentElement;
+  const plainLines = [];
+  let paraCount = 0;
+
+  function renderParagraph(pNode) {
+    let align = '';
+    let headingTag = 'p';
+    const pPr = pNode.getElementsByTagName('w:pPr')[0];
+    if (pPr) {
+      const jc = pPr.getElementsByTagName('w:jc')[0];
+      if (jc) {
+        const val = jc.getAttribute('w:val') || '';
+        if (val === 'center') align = 'text-align:center;';
+        else if (val === 'right' || val === 'end') align = 'text-align:right;';
+        else if (val === 'both') align = 'text-align:justify;';
+      }
+      const pStyle = pPr.getElementsByTagName('w:pStyle')[0];
+      if (pStyle) {
+        const sVal = (pStyle.getAttribute('w:val') || '').toLowerCase();
+        if (sVal.includes('heading1') || sVal === '1' || sVal.includes('title')) headingTag = 'h1';
+        else if (sVal.includes('heading2') || sVal === '2') headingTag = 'h2';
+        else if (sVal.includes('heading3') || sVal === '3') headingTag = 'h3';
+      }
+    }
+
+    let paraHtml = '';
+    let paraPlain = '';
+    const runs = pNode.getElementsByTagName('w:r');
+    for (let i = 0; i < runs.length; i++) {
+      const r = runs[i];
+      const rPr = r.getElementsByTagName('w:rPr')[0];
+      const isBold = rPr && rPr.getElementsByTagName('w:b').length > 0;
+      const isItalic = rPr && rPr.getElementsByTagName('w:i').length > 0;
+      const isUnderline = rPr && rPr.getElementsByTagName('w:u').length > 0;
+      const colorEl = rPr ? rPr.getElementsByTagName('w:color')[0] : null;
+      const hexColor = colorEl ? colorEl.getAttribute('w:val') : null;
+
+      let runText = '';
+      for (let c = r.firstChild; c; c = c.nextSibling) {
+        if (c.nodeName === 'w:t') runText += c.textContent || '';
+        else if (c.nodeName === 'w:tab') runText += '\t';
+        else if (c.nodeName === 'w:br') runText += '\n';
+      }
+      if (!runText) continue;
+      paraPlain += runText;
+      let chunk = escHtml(runText).replace(/\n/g, '<br>').replace(/\t/g, '&emsp;');
+      if (isBold) chunk = `<b>${chunk}</b>`;
+      if (isItalic) chunk = `<i>${chunk}</i>`;
+      if (isUnderline) chunk = `<u>${chunk}</u>`;
+      if (hexColor && hexColor !== 'auto' && /^[0-9A-Fa-f]{6}$/.test(hexColor)) {
+        chunk = `<span style="color:#${hexColor}">${chunk}</span>`;
+      }
+      paraHtml += chunk;
+    }
+    if (!paraPlain.trim()) {
+      return '';
+    }
+    paraCount++;
+    plainLines.push(paraPlain);
+    const styleAttr = align ? ` style="${align}"` : '';
+    return `<${headingTag}${styleAttr}>${paraHtml}</${headingTag}>`;
+  }
+
+  function renderTable(tblNode) {
+    let rowsHtml = '';
+    const trList = tblNode.getElementsByTagName('w:tr');
+    for (let r = 0; r < trList.length; r++) {
+      const tr = trList[r];
+      let cellsHtml = '';
+      const rowPlain = [];
+      for (let c = tr.firstChild; c; c = c.nextSibling) {
+        if (c.nodeName === 'w:tc') {
+          const pNodes = c.getElementsByTagName('w:p');
+          let cellHtml = '';
+          const cellTexts = [];
+          for (let p = 0; p < pNodes.length; p++) {
+            cellHtml += renderParagraph(pNodes[p]);
+            cellTexts.push(pNodes[p].textContent || '');
+          }
+          rowPlain.push(cellTexts.join(' ').trim());
+          cellsHtml += `<td>${cellHtml}</td>`;
+        }
+      }
+      if (rowPlain.length) plainLines.push(rowPlain.join('\t'));
+      rowsHtml += `<tr>${cellsHtml}</tr>`;
+    }
+    return `<table><tbody>${rowsHtml}</tbody></table>`;
+  }
+
+  let htmlParts = [];
+  for (let node = body.firstChild; node; node = node.nextSibling) {
+    if (node.nodeName === 'w:p') {
+      const pHtml = renderParagraph(node);
+      if (pHtml) htmlParts.push(pHtml);
+    } else if (node.nodeName === 'w:tbl') {
+      htmlParts.push(renderTable(node));
+    }
+  }
+
+  // Nếu XML không dùng prefix w: chuẩn thì fallback lấy toàn bộ đoạn văn
+  if (htmlParts.length === 0) {
+    const allP = doc.getElementsByTagName('w:p');
+    for (let i = 0; i < allP.length; i++) {
+      const pHtml = renderParagraph(allP[i]);
+      if (pHtml) htmlParts.push(pHtml);
+    }
+  }
+
+  return {
+    html: htmlParts.join(''),
+    plainText: plainLines.join('\n'),
+    paraCount: Math.max(1, paraCount),
+  };
+}
+
+// ─── Giải mã bảng tính Excel (.xlsx) sang danh sách các Sheet 2 chiều ───
+function excelColLettersToIndex(letters) {
+  let col = 0;
+  for (let i = 0; i < letters.length; i++) {
+    col = col * 26 + (letters.charCodeAt(i) - 64);
+  }
+  return col - 1;
+}
+
+async function parseXlsxArchive(zip) {
+  // 1. Đọc bảng chuỗi dùng chung xl/sharedStrings.xml
+  const sharedStrings = [];
+  const ssXml = await zip.readEntryText('xl/sharedStrings.xml');
+  if (ssXml) {
+    const ssDoc = new DOMParser().parseFromString(ssXml, 'application/xml');
+    const siNodes = ssDoc.getElementsByTagName('si');
+    for (let i = 0; i < siNodes.length; i++) {
+      const tNodes = siNodes[i].getElementsByTagName('t');
+      let s = '';
+      for (let j = 0; j < tNodes.length; j++) s += tNodes[j].textContent || '';
+      sharedStrings.push(s);
+    }
+  }
+
+  // 2. Đọc tên các Sheet từ xl/workbook.xml
+  const sheetNames = [];
+  const wbXml = await zip.readEntryText('xl/workbook.xml');
+  if (wbXml) {
+    const wbDoc = new DOMParser().parseFromString(wbXml, 'application/xml');
+    const sNodes = wbDoc.getElementsByTagName('sheet');
+    for (let i = 0; i < sNodes.length; i++) {
+      sheetNames.push(sNodes[i].getAttribute('name') || `Sheet${i + 1}`);
+    }
+  }
+
+  // 3. Tìm tất cả các file xl/worksheets/sheet*.xml
+  const sheetEntries = zip.entries
+    .filter(e => /^xl\/worksheets\/sheet\d+\.xml$/i.test(e.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+  const sheets = [];
+  for (let idx = 0; idx < sheetEntries.length; idx++) {
+    const xml = await zip.readEntryText(sheetEntries[idx].name);
+    if (!xml) continue;
+    const sDoc = new DOMParser().parseFromString(xml, 'application/xml');
+    const rowNodes = sDoc.getElementsByTagName('row');
+    const rows = [];
+    let maxCols = 0;
+
+    for (let r = 0; r < Math.min(rowNodes.length, 300); r++) {
+      const rowEl = rowNodes[r];
+      const rAttr = parseInt(rowEl.getAttribute('r') || String(r + 1), 10);
+      const rowIndex = Math.max(0, Math.min(299, (isNaN(rAttr) ? r + 1 : rAttr) - 1));
+      while (rows.length <= rowIndex) rows.push([]);
+      const currentRow = rows[rowIndex];
+
+      const cells = rowEl.getElementsByTagName('c');
+      for (let c = 0; c < cells.length; c++) {
+        const cell = cells[c];
+        const ref = cell.getAttribute('r') || '';
+        const match = ref.match(/^([A-Z]+)/i);
+        const colIdx = match ? excelColLettersToIndex(match[1].toUpperCase()) : c;
+        const type = cell.getAttribute('t') || '';
+        let val = '';
+
+        if (type === 'inlineStr') {
+          const tNodes = cell.getElementsByTagName('t');
+          for (let j = 0; j < tNodes.length; j++) val += tNodes[j].textContent || '';
+        } else {
+          const vNode = cell.getElementsByTagName('v')[0];
+          const rawVal = vNode ? (vNode.textContent || '') : '';
+          if (type === 's') {
+            const sIdx = parseInt(rawVal, 10);
+            val = (!isNaN(sIdx) && sharedStrings[sIdx] != null) ? sharedStrings[sIdx] : rawVal;
+          } else if (type === 'b') {
+            val = rawVal === '1' ? 'TRUE' : 'FALSE';
+          } else {
+            val = rawVal;
+          }
+        }
+
+        while (currentRow.length <= colIdx) currentRow.push('');
+        currentRow[colIdx] = val;
+        if (colIdx + 1 > maxCols) maxCols = colIdx + 1;
+      }
+    }
+    sheets.push({
+      name: sheetNames[idx] || `Sheet${idx + 1}`,
+      rows,
+      maxCols,
+    });
+  }
+
+  const plainText = sheets[0] ? sheets[0].rows.map(r => r.join('\t')).join('\n') : '';
+  return { mode: 'excel', sheets, plainText };
+}
+
+// ─── Giải mã bản trình chiếu PowerPoint (.pptx) sang danh sách các Slide ───
+async function parsePptxArchive(zip) {
+  const slideEntries = zip.entries
+    .filter(e => /^ppt\/slides\/slide\d+\.xml$/i.test(e.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+  const slides = [];
+  const allText = [];
+
+  for (let i = 0; i < slideEntries.length; i++) {
+    const xml = await zip.readEntryText(slideEntries[i].name);
+    if (!xml) continue;
+    const sDoc = new DOMParser().parseFromString(xml, 'application/xml');
+    const pNodes = sDoc.getElementsByTagName('a:p');
+    const paragraphs = [];
+
+    for (let p = 0; p < pNodes.length; p++) {
+      const tNodes = pNodes[p].getElementsByTagName('a:t');
+      let line = '';
+      for (let t = 0; t < tNodes.length; t++) line += tNodes[t].textContent || '';
+      if (line.trim()) paragraphs.push(line.trim());
+    }
+
+    const title = paragraphs[0] || `Slide ${i + 1}`;
+    const lines = paragraphs.slice(1);
+    slides.push({ title, lines });
+    allText.push(`--- Slide ${i + 1}: ${title} ---\n${lines.join('\n')}`);
+  }
+
+  return { mode: 'ppt', slides, plainText: allText.join('\n\n') };
 }
 
 async function parseFilePreviewClientSide(url, filename, ext, mime) {
@@ -2900,25 +3383,53 @@ async function parseFilePreviewClientSide(url, filename, ext, mime) {
   if (!res.ok) throw new Error('Không tìm thấy tệp trên máy chủ (' + res.status + ')');
   const buf = await res.arrayBuffer();
 
+  // 1. Tệp Microsoft Word (.docx)
   if (ext === 'docx') {
-    const { extractedText } = await parseZipBufferClientSide(buf, 'word/document.xml');
-    if (extractedText !== null) {
-      const cleaned = extractedText
-        .replace(/<\/w:p>/g, '\n')
-        .replace(/<w:tab[^>]*\/>/g, '\t')
-        .replace(/<w:br[^>]*\/>/g, '\n')
-        .replace(/<[^>]+>/g, '')
-        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
-        .trim();
-      return { mode: 'docx', filename, content: cleaned };
+    const zip = await openZipArchiveClientSide(buf);
+    const docXml = await zip.readEntryText('word/document.xml');
+    if (docXml !== null) {
+      const parsed = parseDocxXmlToHtml(docXml);
+      return { mode: 'word', filename, ...parsed };
     }
   }
 
-  if (ext === 'zip') {
-    const { entries } = await parseZipBufferClientSide(buf, null);
-    return { mode: 'zip', filename, entries };
+  // 2. Tệp Microsoft Excel (.xlsx)
+  if (ext === 'xlsx') {
+    const zip = await openZipArchiveClientSide(buf);
+    return await parseXlsxArchive(zip);
   }
 
+  // 3. Tệp Microsoft PowerPoint (.pptx)
+  if (ext === 'pptx') {
+    const zip = await openZipArchiveClientSide(buf);
+    return await parsePptxArchive(zip);
+  }
+
+  // 4. Tệp bảng tính CSV / TSV -> mở bằng công cụ Microsoft Excel Grid
+  if (ext === 'csv' || ext === 'tsv') {
+    const text = new TextDecoder('utf-8').decode(new Uint8Array(buf));
+    const sep = ext === 'tsv' ? '\t' : ',';
+    const rawLines = text.split(/\r?\n/).filter(l => l.trim().length > 0).slice(0, 300);
+    let maxCols = 0;
+    const rows = rawLines.map(line => {
+      const cols = line.split(sep).map(c => c.replace(/^"|"$/g, ''));
+      if (cols.length > maxCols) maxCols = cols.length;
+      return cols;
+    });
+    return {
+      mode: 'excel',
+      sheets: [{ name: filename || 'Sheet1', rows, maxCols }],
+      plainText: text,
+    };
+  }
+
+  // 5. Tệp gói nén ZIP
+  if (ext === 'zip') {
+    const zip = await openZipArchiveClientSide(buf);
+    return { mode: 'zip', filename, entries: zip.entries };
+  }
+
+  // 6. Các tệp Mã nguồn / Văn bản (.java, .js, .py, .json, .sql, .txt, .md, .html, .css...)
   const maxBytes = 512 * 1024;
   const truncated = buf.byteLength > maxBytes;
   const bytes = new Uint8Array(truncated ? buf.slice(0, maxBytes) : buf);
@@ -2938,7 +3449,7 @@ async function parseFilePreviewClientSide(url, filename, ext, mime) {
   }
   const text = new TextDecoder('utf-8').decode(bytes);
   return {
-    mode: (ext === 'csv' || ext === 'tsv') ? 'csv' : 'text',
+    mode: 'text',
     ext,
     filename,
     truncated,
@@ -2951,6 +3462,7 @@ function closeFilePreviewModal() {
   const bodyEl = $('file-preview-body');
   if (bodyEl) bodyEl.innerHTML = '';
   state.currentPreviewText = '';
+  releasePreviewBlobUrl();
 }
 
 async function copyFilePreviewContent() {
@@ -5062,6 +5574,7 @@ function closeFriendReqModal() { $('freq-modal-overlay')?.classList.remove('visi
 // ─── Global expose ────────────────────────────────────────────────────────────
 Object.assign(window, {
   markFileDownloaded, saveFileWithLocation, openFilePreviewModal, closeFilePreviewModal, copyFilePreviewContent,
+  setWordPreviewZoom, printWordPreview, toggleCodePreviewWrap, switchExcelPreviewSheet, selectExcelPreviewCell, selectPptPreviewSlide,
   selectConversation, switchTab, switchContactsSubView, setContactsSearch, setContactsSort, toggleRpSection, toggleRpShowAll, enterSidebarSearch, exitSidebarSearch, openSearchConvTarget, clearRecentSearches, saveRecentSearch, openGroupModal, closeGroupModal, submitCreateGroup,
   logout, cancelSessionRestore, openImageViewer, openVideoViewer, closeImageViewer, stepMediaViewer, showPanel,
   toggleRightPanel, closeRightPanel, openRightPanelMembers, openRightPanelManage, backToRightPanelInfo, openRightPanelMemberMenu, toggleUserMenu, closeUserMenu, switchRpTab, toggleGroupSetting, togglePinConversation, toggleProfilePageForChat,
