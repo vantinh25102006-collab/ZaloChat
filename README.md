@@ -29,6 +29,22 @@ SecureTcpChat/
 - Maven (`mvn -version`).
 - PowerShell trên Windows; `keytool` phải có trong PATH (đi kèm JDK).
 
+## Chạy Web/TLS bằng Command Prompt (Windows)
+
+Mở **Command Prompt** tại thư mục gốc của dự án. Dùng cùng một cửa sổ CMD cho các lệnh sau:
+
+```bat
+set "CHAT_KEYSTORE_PASSWORD=MatKhauNgauNhienItNhat12KyTu"
+call scripts\generate-certificate.cmd
+mvn spring-boot:run
+```
+
+Thay giá trị ví dụ bằng mật khẩu riêng dài ít nhất 12 ký tự. Script tạo `server/certificates/server.p12` và certificate công khai; nếu keystore đã tồn tại, script sẽ không ghi đè. Mật khẩu chỉ được đọc từ biến môi trường và không được lưu trong Git.
+
+Khi Spring Boot báo đã bật HTTPS/WSS và TCP/TLS, truy cập `https://localhost:8080`. Server TCP/TLS lắng nghe cổng `5000`. Chứng chỉ tự ký có thể khiến trình duyệt cảnh báo chưa tin cậy; đây là cấu hình phát triển cục bộ, không tắt tường lửa để xử lý cảnh báo này.
+
+`server.p12` chứa private key, được `.gitignore` loại trừ và tuyệt đối không commit. Mỗi máy phát triển cần tự tạo keystore riêng.
+
 ## 3. Tạo chứng chỉ TLS (Windows PowerShell)
 
 Mở PowerShell tại thư mục gốc `SecureTcpChat`.
