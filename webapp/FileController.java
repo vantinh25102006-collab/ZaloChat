@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import server.DatabaseManager;
+import webapp.runtime.EmbeddedFtpServer;
 
 import java.io.*;
 import java.nio.file.*;
@@ -32,17 +33,33 @@ public class FileController {
     private static final long MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
     private final ChatWebSocketHandler wsHandler;
+    private final EmbeddedFtpServer ftpServer;
+    private static volatile EmbeddedFtpServer staticFtpServer;
     private final Gson gson = new Gson();
 
     // fileId → metadata (in-memory, backed by DB for file shares)
     private static final Map<String, FileMetadata> fileRegistry = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public FileController(ChatWebSocketHandler wsHandler) {
+    public FileController(ChatWebSocketHandler wsHandler, EmbeddedFtpServer ftpServer) {
         this.wsHandler = wsHandler;
+        this.ftpServer = ftpServer;
+        staticFtpServer = ftpServer;
         try { Files.createDirectories(UPLOAD_DIR); } catch (IOException ignored) { }
     }
 
-    /** Xóa file vật lý trong thư mục uploads dựa theo fileId hoặc đường dẫn /api/files/{fileId}. */
+    /** Kiểm tra trạng thái hoạt động của FTP Server trên cổng 2121. */
+    @GetMapping("/ftp-status")
+    public ResponseEntity<?> ftpStatus() {
+        return ResponseEntity.ok(Map.of(
+                "protocol", "FTP (RFC 959)",
+                "port", ftpServer != null ? ftpServer.getPort() : EmbeddedFtpServer.DEFAULT_FTP_PORT,
+                "running", ftpServer != null && ftpServer.isRunning(),
+                "ftpUrl", "ftp://localhost:" + (ftpServer != null ? ftpServer.getPort() : EmbeddedFtpServer.DEFAULT_FTP_PORT),
+                "rootDirectory", ftpServer != null ? ftpServer.getRootDir().toString() : UPLOAD_DIR.toAbsolutePath().toString()
+        ));
+    }
+
+    /** Xóa file vật lý trên FTP Server (cổng 2121) và thư mục uploads dựa theo fileId hoặc đường dẫn /api/files/{fileId}. */
     public static void deleteStoredFile(String fileIdOrUrl) {
         if (fileIdOrUrl == null || fileIdOrUrl.isBlank()) return;
         String id = fileIdOrUrl.strip();
@@ -54,7 +71,11 @@ public class FileController {
 
         FileMetadata removed = fileRegistry.remove(id);
         if (removed != null && removed.storedName() != null) {
-            try { Files.deleteIfExists(Path.of(removed.storedName())); } catch (IOException ignored) { }
+            Path p = Path.of(removed.storedName());
+            if (staticFtpServer != null) {
+                staticFtpServer.deleteViaFtp(staticFtpServer.toRelativeFtpPath(p));
+            }
+            try { Files.deleteIfExists(p); } catch (IOException ignored) { }
         }
         final String targetId = id;
         if (Files.exists(UPLOAD_DIR)) {
@@ -65,6 +86,9 @@ public class FileController {
                          return fn.equals(targetId) || fn.startsWith(targetId + ".");
                      })
                      .forEach(p -> {
+                         if (staticFtpServer != null) {
+                             staticFtpServer.deleteViaFtp(staticFtpServer.toRelativeFtpPath(p));
+                         }
                          try { Files.deleteIfExists(p); } catch (IOException ignored) { }
                      });
             } catch (IOException ignored) { }
@@ -99,12 +123,16 @@ public class FileController {
 
         // Xác định thư mục lưu file theo conversation
         Path targetDir;
+        String ftpSubDir;
         if (groupId != null && !groupId.isBlank()) {
-            targetDir = Path.of("uploads/group_" + groupId);
+            ftpSubDir = "group_" + groupId;
+            targetDir = Path.of("uploads/" + ftpSubDir);
         } else if (to != null && !to.isBlank()) {
             String key = uploader.compareTo(to) < 0 ? uploader + "_" + to : to + "_" + uploader;
-            targetDir = Path.of("uploads/dm_" + key);
+            ftpSubDir = "dm_" + key;
+            targetDir = Path.of("uploads/" + ftpSubDir);
         } else {
+            ftpSubDir = "";
             targetDir = UPLOAD_DIR;
         }
         try { Files.createDirectories(targetDir); } catch (IOException ignored) {}
@@ -116,9 +144,13 @@ public class FileController {
         Path dest = targetDir.resolve(storedName);
 
         try {
-            file.transferTo(dest);
+            byte[] fileBytes = file.getBytes();
+            boolean storedViaFtp = ftpServer != null && ftpServer.uploadViaFtp(ftpSubDir, storedName, fileBytes);
+            if (!storedViaFtp) {
+                Files.write(dest, fileBytes);
+            }
         } catch (IOException e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "Không thể lưu file: " + e.getMessage()));
+            return ResponseEntity.internalServerError().body(Map.of("error", "Không thể lưu file lên FTP Server: " + e.getMessage()));
         }
 
         String mimeType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
@@ -175,8 +207,13 @@ public class FileController {
             Files.createDirectories(dir);
             String id = UUID.randomUUID().toString();
             String ext = getExtension(sanitizeFilename(file.getOriginalFilename()));
-            Path dest = dir.resolve(id + (ext.isEmpty() ? "" : "." + ext));
-            file.transferTo(dest);
+            String storedAvatarName = id + (ext.isEmpty() ? "" : "." + ext);
+            Path dest = dir.resolve(storedAvatarName);
+            byte[] avatarBytes = file.getBytes();
+            boolean storedViaFtp = ftpServer != null && ftpServer.uploadViaFtp("avatars", storedAvatarName, avatarBytes);
+            if (!storedViaFtp) {
+                Files.write(dest, avatarBytes);
+            }
             String url = "/api/files/" + id;
             fileRegistry.put(id, new FileMetadata(id, target + (ext.isEmpty() ? "" : "." + ext),
                     dest.toString(), uploader, mime, humanReadableSize(file.getSize()), file.getSize()));
@@ -254,7 +291,13 @@ public class FileController {
                     return new ResponseEntity<>(null, invalid, HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE);
                 }
             }
-            byte[] data = Files.readAllBytes(filePath);
+            byte[] data = null;
+            if (ftpServer != null) {
+                data = ftpServer.downloadViaFtp(ftpServer.toRelativeFtpPath(filePath));
+            }
+            if (data == null) {
+                data = Files.readAllBytes(filePath);
+            }
             return ResponseEntity.ok()
                     .header("Content-Type", meta.mimeType())
                     .header("Content-Disposition", disposition)
